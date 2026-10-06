@@ -87,6 +87,17 @@ void PluginBase::restoreFromXml (const XmlElement& xml, bool includeUiState)
     if (! xml.hasTagName (stateRootId))
         return;
 
+    // Test/automation hook: <AdventureState loadFactoryPreset="Name"/> loads a factory preset by name.
+    // Regular saved states never contain this attribute.
+    if (xml.hasAttribute ("loadFactoryPreset"))
+    {
+        const auto wanted = xml.getStringAttribute ("loadFactoryPreset");
+        for (int i = 0; i < (int) factoryPresets.size(); ++i)
+            if (factoryPresets[(size_t) i].name.equalsIgnoreCase (wanted))
+                loadFactoryPreset (i);
+        return;
+    }
+
     if (auto* params = xml.getChildByName (apvts.state.getType()))
     {
         // Merge onto defaults so that parameters added in future versions keep sane values.

@@ -34,6 +34,7 @@ struct Options
     String midiFile, inputFile;
     StringArray automations;
     double leadIn = 1.5;
+    String preset;
 };
 
 Options parse (const StringArray& args)
@@ -63,6 +64,7 @@ Options parse (const StringArray& args)
         else if (a == "--input-file") o.inputFile = next();
         else if (a == "--automate") o.automations.add (next());
         else if (a == "--lead-in") o.leadIn = next().getDoubleValue();
+        else if (a == "--preset") o.preset = next();
     }
     return o;
 }
@@ -300,6 +302,27 @@ std::unique_ptr<AudioPluginInstance> loadPlugin (AudioPluginFormatManager& fm, c
     return fm.createPluginInstance (*types[0], sr, block, error);
 }
 
+void injectPluginState (AudioPluginInstance& plugin, const XmlElement& xml)
+{
+    MemoryBlock pluginData;
+    AudioProcessor::copyXmlToBinary (xml, pluginData);
+    XmlElement envelope ("VST3PluginState");
+    envelope.createNewChildElement ("IComponent")->addTextElement (pluginData.toBase64Encoding());
+    MemoryBlock mb;
+    AudioProcessor::copyXmlToBinary (envelope, mb);
+    plugin.setStateInformation (mb.getData(), (int) mb.getSize());
+}
+
+void applyPreset (AudioPluginInstance& plugin, const String& preset)
+{
+    if (preset.isEmpty())
+        return;
+    XmlElement xml ("AdventureState");
+    xml.setAttribute ("loadFactoryPreset", preset);
+    injectPluginState (plugin, xml);
+    std::cout << "  preset " << preset << std::endl;
+}
+
 void applyState (AudioPluginInstance& plugin, const String& stateFile)
 {
     if (stateFile.isEmpty())
@@ -464,6 +487,7 @@ int runRender (const Options& o)
     plugin->setRateAndBufferSizeDetails (o.sampleRate, o.block);
     plugin->prepareToPlay (o.sampleRate, o.block);
     applyState (*plugin, o.stateFile);
+    applyPreset (*plugin, o.preset);
     applyParams (*plugin, o.params);
 
     SignalSource src;
@@ -748,6 +772,7 @@ public:
         plugin->setRateAndBufferSizeDetails (o.sampleRate, o.block);
         plugin->prepareToPlay (o.sampleRate, o.block);
         applyState (*plugin, o.stateFile);
+        applyPreset (*plugin, o.preset);
         applyParams (*plugin, o.params);
 
         window = std::make_unique<DocumentWindow> ("harness", Colours::black, 0, true);

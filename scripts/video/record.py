@@ -5,6 +5,7 @@
 
 Spec fields:
   plugin        plugin folder name (e.g. "Boing")
+  preset        factory preset name to load first        (optional)
   params        ["Param Name=value text", ...]          (optional)
   automations   ["Param Name=from:to@t0:t1", ...]       (optional, seconds from audio start)
   midiFile      path to a .mid file                      (optional)
@@ -81,6 +82,8 @@ def main():
 
     cmd = [HARNESS, "record", find_vst3(plugin), str(prefix), "--seconds", str(seconds),
            "--width", str(spec.get("width", 1320)), "--lead-in", "1.5"]
+    if spec.get("preset"):
+        cmd += ["--preset", spec["preset"]]
     for p in spec.get("params", []):
         cmd += ["--param", p]
     for a in spec.get("automations", []):
@@ -119,6 +122,21 @@ def main():
     for f in tiles:
         os.remove(f)
     print("sheet", out_dir / f"{plugin}_sheet.png")
+
+    # smoothness: fraction of frames in the clip identical to the previous one (UI didn't repaint in time)
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-ss", f"{offset + clip_start:.3f}", "-t", f"{clip_dur:.3f}",
+                          "-i", str(prefix.with_suffix(".mkv")), "-vf",
+                          f"crop={meta['width']}:{meta['editorHeight']}:0:0,scale=320:-2,format=gray",
+                          "-f", "rawvideo", "-"], capture_output=True).stdout
+    fw = 320
+    fh = int(round(meta["editorHeight"] * 320 / meta["width"] / 2) * 2)
+    frames = np.frombuffer(raw, dtype=np.uint8)
+    nfr = len(frames) // (fw * fh)
+    if nfr > 1:
+        frames = frames[: nfr * fw * fh].reshape(nfr, fh, fw).astype(np.int16)
+        diffs = np.abs(np.diff(frames, axis=0)).mean(axis=(1, 2))
+        dup = float(np.mean(diffs < 0.05))
+        print(f"frames {nfr}, duplicated (static) frames {dup * 100:.0f}% (high values mean stutter or a static UI)")
 
     audio, sr = read_wav(prefix.with_suffix(".wav"))
     clip = audio[int(clip_start * sr): int((clip_start + clip_dur) * sr)]
