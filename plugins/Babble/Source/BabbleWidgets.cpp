@@ -28,6 +28,25 @@ MouthShape mouthForVowel (float vowel)
              mix (a.round, b.round), mix (a.teeth, b.teeth), mix (a.pucker, b.pucker) };
 }
 
+Path mouthPath (Point<float> c, float size, const MouthShape& m, float open)
+{
+    open = jlimit (0.0f, 1.0f, open);
+    const float halfW = size * m.width * 0.5f;
+    const float h = size * 0.62f * m.height * open;
+    const float lift = size * 0.11f * m.smile;
+    const float kx = jmap (m.round, 0.42f, 1.0f);
+    const float cornerY = c.y - lift;
+    auto ctrlY = [cornerY] (float midY) { return (8.0f * midY - 2.0f * cornerY) / 6.0f; };
+    const float yTop = ctrlY (c.y - h * 0.3f), yBot = ctrlY (c.y + h * 0.7f);
+
+    Path mouth;
+    mouth.startNewSubPath (c.x - halfW, cornerY);
+    mouth.cubicTo (c.x - halfW * kx, yTop, c.x + halfW * kx, yTop, c.x + halfW, cornerY);
+    mouth.cubicTo (c.x + halfW * kx, yBot, c.x - halfW * kx, yBot, c.x - halfW, cornerY);
+    mouth.closeSubPath();
+    return mouth;
+}
+
 void drawMouth (Graphics& g, Point<float> c, float size, const MouthShape& m, float open, float inkWidth,
                 float robot, float glow)
 {
@@ -36,16 +55,10 @@ void drawMouth (Graphics& g, Point<float> c, float size, const MouthShape& m, fl
     const float h = size * 0.62f * m.height * open;
     const float lift = size * 0.11f * m.smile;
     const float hUp = h * 0.3f, hDown = h * 0.7f;
-    const float kx = jmap (m.round, 0.42f, 1.0f);
     const float cornerY = c.y - lift;
     auto ctrlY = [cornerY] (float midY) { return (8.0f * midY - 2.0f * cornerY) / 6.0f; };
-    const float yTop = ctrlY (c.y - hUp), yBot = ctrlY (c.y + hDown);
-
-    Path mouth;
-    mouth.startNewSubPath (c.x - halfW, cornerY);
-    mouth.cubicTo (c.x - halfW * kx, yTop, c.x + halfW * kx, yTop, c.x + halfW, cornerY);
-    mouth.cubicTo (c.x + halfW * kx, yBot, c.x - halfW * kx, yBot, c.x - halfW, cornerY);
-    mouth.closeSubPath();
+    const float yTop = ctrlY (c.y - hUp);
+    const auto mouth = mouthPath (c, size, m, open);
 
     if (h > 0.6f)
     {
@@ -343,10 +356,22 @@ void MouthPad::paint (Graphics& g)
     }
 
     // throat centre line
-    g.setColour (peach.withAlpha (0.25f));
     const float cy = inner.getCentreY();
+    g.setColour (peach.withAlpha (0.25f));
     for (float x = area.getX() + 8.0f; x < area.getRight() - 8.0f; x += 9.0f)
         g.fillRect (x, cy - 0.5f, 5.0f, 1.0f);
+
+    // vowel mouth watermarks
+    for (int i = 0; i < numVowels; ++i)
+    {
+        const float x = inner.getX() + inner.getWidth() * (float) i / 4.0f;
+        const float near = 1.0f - jlimit (0.0f, 1.0f, std::abs (vowel - (float) i));
+        const auto wm = mouthPath ({ x, inner.getY() + inner.getHeight() * 0.78f }, 36.0f, mouthForVowel ((float) i), 0.9f);
+        g.setColour (cream.withAlpha (0.06f + 0.1f * near));
+        g.fillPath (wm);
+        g.setColour (cream.withAlpha (0.16f + 0.2f * near));
+        g.strokePath (wm, PathStrokeType (1.5f, PathStrokeType::curved, PathStrokeType::rounded));
+    }
 
     g.setFont (aa::Fonts::uiBold (9.0f).withExtraKerningFactor (0.12f));
     g.setColour (peach.withAlpha (0.55f));

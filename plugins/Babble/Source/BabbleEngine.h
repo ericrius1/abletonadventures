@@ -16,7 +16,7 @@ struct Settings
     float vibRate = 5.2f;         // Hz
     float vibDepth = 0.3f;        // 0..1
     float vibDelay = 0.4f;        // seconds
-    float glide = 0.03f;          // seconds
+    float glide = 0.0f;           // seconds
     float babble = 0.4f;          // 0..1
     float babbleRate = 4.0f;      // Hz
     bool babbleSync = false;
@@ -139,7 +139,7 @@ private:
     aa::dsp::Rng rng { 0x5EED1234u };
     float sylPhase = 0.0f, sylLength = 0.25f, sylTime = 1.0f, closeLen = 0.05f, depthEff = 0.0f;
     int consonant = 0, lastConsonant = -1;
-    int randomVowel = 0, prevRandomVowel = 0, lastPickedVowel = -1;
+    int randomVowel = 0, prevRandomVowel = 0;
     double lastSyncIndex = -1.0e9;
     bool forceSyllable = false, wasBabbling = false;
     float vowelTarget = 0.0f;
@@ -162,6 +162,6 @@ private:
     float reverbMix = 0.0f, chorusMix = 0.0f;
 
     // UI accumulators
-    float peak = 0.0f, uiVib = 0.0f;
+    float peak = 0.0f;
 };
 } // namespace babble

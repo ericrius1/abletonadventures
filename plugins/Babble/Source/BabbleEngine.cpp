@@ -143,7 +143,7 @@ void Engine::reset()
     murmurL = murmurR = 0.0f;
     crushPhase = crushL = crushR = 0.0f;
     dcL = dcR = 0.0f;
-    peak = uiVib = 0.0f;
+    peak = 0.0f;
 
     chorus.reset();
     reverb.reset();
@@ -741,7 +741,7 @@ void Engine::renderVoice (Voice& v, float* outL, float* outR, int n, float gapSt
     const float voicedMul = voiced * (1.0f - 0.7f * aspEnv);
     const float glottalDepth = 0.6f * voiced;
     const float killStep = 1.0f / (0.005f * (float) sr);
-    const float makeup = 1.0f + 1.1f * robotS; // ring mod + narrow resonances lose a lot of energy
+    const float makeup = 1.0f + 0.5f * robotS; // ring mod + narrow resonances lose some energy
 
     float g = gapStart;
     for (int i = 0; i < n; ++i)
@@ -766,7 +766,8 @@ void Engine::renderVoice (Voice& v, float* outL, float* outR, int n, float gapSt
                     t2 += 1.0f;
                 const float pulse = (ph < pw ? 1.0f : -1.0f) + aa::dsp::BlepOsc::polyBlep (ph, dt)
                                     - aa::dsp::BlepOsc::polyBlep (t2, dt);
-                x += pulseMix * (0.7f * pulse - x);
+                // inverted so its edge lines up with the saw's reset (blending in phase keeps the level)
+                x += pulseMix * (-0.7f * pulse - x);
             }
             if (ring > 0.0f)
             {

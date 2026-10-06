@@ -43,7 +43,7 @@ namespace
 BabbleEditor::BabbleEditor (BabbleProcessor& p)
     : aa::EditorBase (p, baseWidth, baseHeight, makeTheme()),
       proc (p),
-      babbleKnob (p.apvts, "babble", "Babble"),
+      babbleKnob (p.apvts, "babble", "Amount"),
       babbleRate (p.apvts, "babbleRate", "Rate"),
       vibRate (p.apvts, "vibRate", "Rate"),
       vibDepth (p.apvts, "vibDepth", "Depth"),
@@ -154,7 +154,7 @@ void BabbleEditor::layoutContent()
     // Mouth: XY pad + voice picker
     {
         auto c = contentOf (mouthPanel);
-        mouthReadout.setBounds (Rectangle<float> (mouthPanel.getRight() - 132.0f, mouthPanel.getY() + 9.0f, 118.0f, 18.0f).toNearestInt());
+        mouthReadout.setBounds (Rectangle<float> (mouthPanel.getRight() - 144.0f, mouthPanel.getY() + 9.0f, 130.0f, 18.0f).toNearestInt());
         mouthPad.setBounds (c.removeFromTop (216.0f).toNearestInt());
         c.removeFromTop (6.0f);
         voicePicker.setBounds (c.toNearestInt());

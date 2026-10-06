@@ -33,6 +33,9 @@ struct MouthShape
 
 MouthShape mouthForVowel (float vowel);
 
+/** The outline of a mouth (used for drawing and for watermarks). */
+juce::Path mouthPath (juce::Point<float> c, float size, const MouthShape& m, float open);
+
 /** Draws a mouth centred at c. open: 0 = closed smile line, 1 = fully open. robot > 0.5 swaps the
     tongue for a glowing speaker grille. */
 void drawMouth (juce::Graphics& g, juce::Point<float> c, float size, const MouthShape& m, float open,

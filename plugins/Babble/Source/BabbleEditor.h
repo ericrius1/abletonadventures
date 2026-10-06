@@ -46,6 +46,5 @@ private:
     juce::Rectangle<float> titleArea;
     std::array<float, 6> letterY {}, letterVel {};
     float titleClock = 0.0f, titleEnergy = 0.0f;
-    int lastActiveNotes = 0;
     juce::String lastReadout;
 };

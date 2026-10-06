@@ -60,7 +60,7 @@ private:
     float lookTimer = 1.0f;
 
     float vowel = 0.0f, open = 0.0f, lips = 0.0f, level = 0.0f, vibrato = 0.0f;
-    float singing = 0.0f, surprise = 0.0f, giggle = 0.0f, poke = 0.0f;
+    float singing = 0.0f, surprise = 0.0f, giggle = 0.0f, poke = 0.0f, sleep = 0.0f;
     int voiceType = 2;
 
     std::vector<Note> notes;

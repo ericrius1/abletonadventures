@@ -92,7 +92,7 @@ BabbleProcessor::BabbleProcessor()
         { "Alien Chatter", { { "voice", 4.0f }, { "shift", 9.0f }, { "babble", 100.0f }, { "babbleRate", 9.0f },
                              { "glide", 120.0f }, { "vibDepth", 0.0f }, { "choir", 2.0f }, { "detune", 70.0f },
                              { "breath", 15.0f }, { "bright", 70.0f }, { "attack", 5.0f }, { "release", 150.0f },
-                             { "chorus", 60.0f }, { "reverb", 30.0f } } },
+                             { "chorus", 60.0f }, { "reverb", 30.0f }, { "volume", 3.0f } } },
         { "Doo-Wop Bass", { { "voice", 0.0f }, { "vowel", 4.0f }, { "shift", -1.0f }, { "babble", 30.0f },
                             { "babbleSync", 1.0f }, { "babbleDiv", 8.0f }, { "glide", 40.0f }, { "attack", 6.0f },
                             { "release", 200.0f }, { "choir", 1.0f }, { "vibDepth", 12.0f }, { "bright", 45.0f },

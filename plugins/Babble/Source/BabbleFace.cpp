@@ -71,6 +71,9 @@ FaceStage::FaceStage (BabbleProcessor& p) : proc (p)
     babbleParam = p.apvts.getRawParameterValue ("babble");
     notes.reserve (32);
     setOpaque (false);
+
+    UiEvent stale; // events queued while the editor was closed
+    while (p.engine.uiEvents.pop (stale)) {}
     setTooltip ("Meet Babs! Play notes and Babs sings them. Turn up Babble for gibberish. Click to say hello.");
 }
 
@@ -132,7 +135,7 @@ void FaceStage::tick (double dt)
         {
             bounceVel -= 70.0f + 150.0f * ev.value;
             squashVel += 2.4f * ev.value;
-            surprise = jmax (surprise, ev.value > 0.85f ? 1.0f : 0.35f);
+            surprise = jmax (surprise, (ev.value > 0.85f || sleep > 0.3f) ? 1.0f : 0.35f);
             tiltVel += (random.nextFloat() - 0.5f) * 0.9f;
             if (onNote)
                 onNote (ev.value);
@@ -162,7 +165,7 @@ void FaceStage::tick (double dt)
     // springs: head bounce, squash, tilt and a hair tuft that lags behind
     spring (bounce, bounceVel, 0.0f, 240.0f, 13.0f, fdt);
     spring (squash, squashVel, 0.0f, 380.0f, 12.0f, fdt);
-    spring (tilt, tiltVel, tiltTarget * (0.3f + 0.7f * singing), 90.0f, 9.0f, fdt);
+    spring (tilt, tiltVel, tiltTarget * (0.3f + 0.7f * singing) + 0.09f * sleep, 90.0f, 9.0f, fdt);
     spring (tuft, tuftVel, -bounceVel * 0.0035f + tilt * 2.0f, 150.0f, 5.0f, fdt);
     tiltTarget *= std::exp (-fdt * 1.2f);
     surprise = jmax (0.0f, surprise - fdt * 2.0f);
@@ -231,6 +234,10 @@ void FaceStage::tick (double dt)
         syllables.clear();
     sungText = babbleAmount < 0.005f ? String (sungVowel (jlimit (0, numVowels - 1, roundToInt (vowel)))) : String();
     hintAlpha += ((silence > 2.5f && poke <= 0.0f ? 1.0f : 0.0f) - hintAlpha) * smoothingCoeff (dt, 0.35f);
+
+    // after a long quiet spell Babs dozes off (and wakes with a start on the next note)
+    const bool drowsy = silence > 25.0f && poke <= 0.0f;
+    sleep = drowsy ? jmin (1.0f, sleep + fdt * 0.5f) : jmax (0.0f, sleep - fdt * 4.0f);
 
     repaint();
 }
@@ -599,7 +606,7 @@ void FaceStage::drawHair (Graphics& g, Point<float> c, float rx, float ry)
     const float sideAngle = voiceType == tenor ? 1.32f : 1.72f;
     const float hx = rx + 5.0f, hy = ry + 6.0f;
     const float cy = c.y + 3.0f;
-    const float fy = c.y - ry * 0.5f;
+    const float fy = c.y - ry * 0.63f;
     const Colour colour = voiceType == alto ? Colour (0xffc8503f) : (voiceType == tenor ? ink.brighter (0.25f) : plum);
 
     Path hair;
@@ -611,9 +618,9 @@ void FaceStage::drawHair (Graphics& g, Point<float> c, float rx, float ry)
     {
         // a bob with a swoopy fringe
         hair.quadraticTo (rightEnd.x - 6.0f, rightEnd.y + 18.0f, rightEnd.x - 22.0f, rightEnd.y + 12.0f);
-        hair.quadraticTo (c.x + rx * 0.7f, fy + 10.0f, c.x + rx * 0.55f, fy - 4.0f);
-        hair.quadraticTo (c.x + rx * 0.1f, fy + 14.0f, c.x - rx * 0.45f, fy - 8.0f);
-        hair.quadraticTo (c.x - rx * 0.75f, fy + 6.0f, leftEnd.x + 22.0f, leftEnd.y + 12.0f);
+        hair.quadraticTo (c.x + rx * 0.72f, fy + 8.0f, c.x + rx * 0.55f, fy - 2.0f);
+        hair.quadraticTo (c.x + rx * 0.1f, fy + 8.0f, c.x - rx * 0.45f, fy - 8.0f);
+        hair.quadraticTo (c.x - rx * 0.78f, fy + 4.0f, leftEnd.x + 22.0f, leftEnd.y + 12.0f);
         hair.quadraticTo (leftEnd.x + 6.0f, leftEnd.y + 18.0f, leftEnd.x, leftEnd.y);
     }
     else
@@ -666,7 +673,7 @@ void FaceStage::drawEyes (Graphics& g, Point<float> c, float rx, float ry)
         }
 
         const bool happy = giggle > 0.25f;
-        const float closed = happy ? 1.0f : blink;
+        const float closed = happy ? 1.0f : jmax (blink, sleep);
 
         if (closed > 0.92f)
         {
@@ -830,7 +837,16 @@ void FaceStage::drawHead (Graphics& g)
     shape.smile = jmap (sing, 0.6f + 0.3f * giggle, shape.smile);
     shape.width = jmap (sing, 0.5f, shape.width);
     shape.pucker = jmax (shape.pucker * sing, lips * 0.4f);
-    const float mouthOpen = jlimit (0.0f, 1.0f, open * (1.0f - 0.92f * lips) + giggle * 0.35f * (1.0f - sing));
+    const float snore = sleep * (0.25f + 0.2f * std::sin ((float) clock * 1.3f));
+    if (sleep > 0.0f)
+    {
+        const auto o = mouthForVowel (3.4f);
+        shape.width = jmap (sleep, shape.width, o.width * 0.7f);
+        shape.smile = jmap (sleep, shape.smile, 0.0f);
+        shape.round = jmap (sleep, shape.round, 1.0f);
+        shape.teeth *= 1.0f - sleep;
+    }
+    const float mouthOpen = jlimit (0.0f, 1.0f, open * (1.0f - 0.92f * lips) + giggle * 0.35f * (1.0f - sing) + snore);
     const Point<float> mc (c.x, c.y + ry * 0.46f);
     const float mouthSize = voiceType == child ? 100.0f : 112.0f;
     drawMouth (g, mc, mouthSize, shape, mouthOpen, 3.8f, voiceType == robot ? 1.0f : 0.0f, level);
@@ -871,7 +887,7 @@ void FaceStage::drawBubble (Graphics& g)
     {
         if (hintAlpha < 0.01f)
             return;
-        text = "Play me!";
+        text = sleep > 0.5f ? "Zzz..." : "Play me!";
         isHint = true;
         alpha = hintAlpha;
     }
@@ -971,7 +987,7 @@ void FaceStage::paint (Graphics& g)
 
         drawNotes (g);
 
-        const float breathe = std::sin ((float) clock * 1.7f) * 1.5f;
+        const float breathe = std::sin ((float) clock * (1.7f - 0.6f * sleep)) * (1.5f + 2.0f * sleep);
         drawBody (g, bounce * 0.25f + breathe * 0.5f);
 
         {
