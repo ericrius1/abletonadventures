@@ -1,0 +1,153 @@
+name: Build Adventure Pack
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-14
+          - name: Windows
+            os: windows-2022
+          - name: Linux
+            os: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build libasound2-dev libjack-jackd2-dev \
+            ladspa-sdk libfreetype-dev libfontconfig1-dev libx11-dev libxcomposite-dev libxcursor-dev \
+            libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libxi-dev zip xvfb
+
+      - name: ccache
+        if: runner.os != 'Windows'
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ matrix.name }}
+          max-size: 2G
+
+      - name: Configure
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          else
+            cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          fi
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Package
+        shell: bash
+        run: scripts/package.sh ${{ matrix.name }} build
+
+      - name: Validate with pluginval
+        if: runner.os != 'Linux'
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            curl -fsSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+            unzip -q pluginval.zip
+            PV=./pluginval.app/Contents/MacOS/pluginval
+            mkdir -p ~/Library/Audio/Plug-Ins/Components
+            cp -R dist/AdventurePack-macOS/Components/*.component ~/Library/Audio/Plug-Ins/Components/
+            killall -9 AudioComponentRegistrar || true
+            PLUGINS=(dist/AdventurePack-macOS/VST3/*.vst3 ~/Library/Audio/Plug-Ins/Components/*.component)
+          else
+            curl -fsSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_Windows.zip
+            unzip -q pluginval.zip
+            PV=./pluginval.exe
+            PLUGINS=(dist/AdventurePack-Windows/VST3/*.vst3)
+          fi
+          failed=0
+          for p in "${PLUGINS[@]}"; do
+            echo "::group::pluginval $(basename "$p")"
+            if "$PV" --strictness-level 5 --timeout-ms 300000 --validate "$p"; then
+              echo "PASS $(basename "$p")"
+            else
+              echo "::error::pluginval failed for $(basename "$p")"
+              failed=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $failed
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AdventurePack-${{ matrix.name }}
+          path: dist/AdventurePack-${{ matrix.name }}.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(sed -n 's/^project(AdventurePack VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          TAG="v$VERSION"
+          cp scripts/install-macos.sh dist/install-macos.sh
+          cp scripts/install-windows.ps1 dist/install-windows.ps1
+          cat > notes.md << EOF
+          Built from \`${GITHUB_SHA::7}\` on \`${GITHUB_REF_NAME}\`.
+
+          ## Install
+
+          **macOS** - paste into Terminal:
+          \`\`\`
+          curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/install-macos.sh | bash
+          \`\`\`
+          or download **AdventurePack-macOS.zip**, unzip, and double-click *Install Adventure Pack.command*.
+
+          **Windows** - download **AdventurePack-Windows.zip**, unzip, and double-click *Install Adventure Pack.bat*.
+
+          Then in Ableton Live: Preferences > Plug-Ins > enable VST3 system folders (and Audio Units on Mac) > Rescan.
+          Everything appears under **Plug-Ins > Adventure Audio**.
+
+          ## What's inside
+          Stardust (pad synth) · Critter Kit (drum machine) · Orrery (polyrhythm sequencer) · Babble (singing synth) ·
+          Boing (bouncing-ball delay) · Gremlin (glitch) · Tape Dreams (lo-fi tape) · Crystal Cave (shimmer reverb)
+          EOF
+          sed -i 's/^          //' notes.md
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" dist/*.zip dist/install-macos.sh dist/install-windows.ps1 \
+            --title "Adventure Pack $TAG" --notes-file notes.md --target "$GITHUB_SHA" --latest

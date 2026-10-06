@@ -1,0 +1,39 @@
+ADVENTURE PACK v@VERSION@  -  whimsical plugins for Ableton Live, by Adventure Audio
+=====================================================================================
+
+What's inside
+  Stardust      - cosmic supersaw pad synth (instrument)
+  Critter Kit   - creature drum machine + step sequencer, drag samples onto the critters (instrument)
+  Orrery        - polyrhythmic planet sequencer with a celestial bell voice, also outputs MIDI (instrument)
+  Babble        - singing formant synth with a cartoon face (instrument)
+  Boing         - bouncing-ball delay (effect)
+  Gremlin       - tempo-synced glitch / stutter machine (effect)
+  Tape Dreams   - warm, wobbly cassette tape machine (effect)
+  Crystal Cave  - shimmering crystalline reverb (effect)
+
+INSTALL - macOS
+  Double-click "Install Adventure Pack.command".
+    (If macOS says it can't be opened: open Terminal, type  bash  and a space,
+     drag install.sh onto the Terminal window, press Enter.)
+  The installer copies VST3 + AU plugins into ~/Library/Audio/Plug-Ins and clears the
+  download quarantine flag so Live can load them.
+
+INSTALL - Windows
+  Double-click "Install Adventure Pack.bat" and allow administrator access.
+  (Manual: copy the folders inside VST3\ into C:\Program Files\Common Files\VST3\)
+  If Windows SmartScreen warns about the .bat, choose "More info" > "Run anyway".
+
+Then in Ableton Live
+  Preferences > Plug-Ins > enable "Use VST3 Plug-in System Folders" (and "Use Audio Units" on Mac)
+  > Rescan. The plugins appear under Plug-Ins > Adventure Audio.
+
+Tips
+  * Every plugin window can be resized from its bottom-right corner.
+  * Presets: click the preset name at the top (arrows step through them). "Save preset..." stores
+    your own in Documents/Adventure Audio.
+  * Orrery's notes can drive any other instrument: put Orrery on a MIDI track, then on another
+    MIDI track set "MIDI From" to the Orrery track (choose "Orrery" in the second dropdown).
+  * Critter Kit plays MIDI notes C1-G1 (36-43) - the bottom two rows of a Drum Rack / Push grid.
+    Drag any audio file onto a critter to feed it a sample.
+
+Source code, issues and updates: https://github.com/ericrius1/abletonadventures
