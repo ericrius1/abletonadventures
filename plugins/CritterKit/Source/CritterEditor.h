@@ -48,7 +48,7 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override { cachedBackground = {}; }
     void mouseDown (const juce::MouseEvent&) override;
-    void mouseEnter (const juce::MouseEvent&) override { hovered = true; repaint(); }
+    void mouseEnter (const juce::MouseEvent&) override { hovered = true; squashVel -= 2.5f; repaint(); }
     void mouseExit (const juce::MouseEvent&) override { hovered = false; repaint(); }
 
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
@@ -72,7 +72,7 @@ private:
     juce::Image cachedBackground;
     juce::Random random;
 
-    bool selected = false, hovered = false, dragHover = false;
+    bool selected = false, hovered = false, dragHover = false, fullRepaint = false;
     float squash = 0.0f, squashVel = 0.0f;
     float mouth = 0.0f, excited = 0.0f, action = 0.0f, flash = 0.0f;
     float blink = 0.0f, blinkTimer = 2.0f, blinkPhase = -1.0f;
@@ -117,6 +117,7 @@ private:
     bool cellAt (juce::Point<float> p, int& row, int& step) const;
     int labelRowAt (juce::Point<float> p) const;
     void rebuildBackground (float scale);
+    void drawEmptyCell (juce::Graphics&, juce::Rectangle<float> cell, bool hover, int row) const;
     void showRowMenu (int row);
 
     CritterEditor& editor;
@@ -144,16 +145,21 @@ public:
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseMove (const juce::MouseEvent&) override;
-    void mouseExit (const juce::MouseEvent&) override { closeHover = false; repaint(); }
+    void mouseExit (const juce::MouseEvent&) override { closeHover = diceHover = false; repaint(); }
+
+    void spinDice() { diceSpin = 1.0f; }
+    void tick (double dt);
 
 private:
     juce::Rectangle<float> chipArea() const;
     juce::Rectangle<float> closeArea() const;
+    juce::Rectangle<float> diceArea() const;
 
     CritterEditor& editor;
     CritterProcessor& proc;
     int voice = 0;
-    bool closeHover = false;
+    bool closeHover = false, diceHover = false;
+    float diceSpin = 0.0f;
 };
 
 //==============================================================================
@@ -168,6 +174,7 @@ public:
     void audition (int voice);
     void showSampleMenu (int voice, juce::Component* target);
     void chooseSampleFile (int voice);
+    void rollDice (int voice);
 
 private:
     void paintContent (juce::Graphics&) override;
@@ -192,6 +199,11 @@ private:
     juce::Image background;
     juce::Rectangle<float> titleArea;
     std::array<float, 10> letterBounce {}, letterVel {};
+    std::vector<juce::Path> titleLetters, titleOutlines;
+    std::vector<std::pair<juce::Image, juce::Rectangle<float>>> titleImages;
+    float titleImageScale = 0.0f;
+    float titleEnd = 0.0f;
+    double pendingDt = 0.0;
     uint32_t lastPatternVersion = 0;
     std::array<int, critter::numVoices> lastSampleVersion {}, lastFailures {};
 };

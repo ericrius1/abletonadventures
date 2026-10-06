@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <functional>
 #include <vector>
+#include <limits>
 
 namespace aa
 {
@@ -98,13 +99,16 @@ namespace params
 
     enum class Unit { none, percent, hz, ms, seconds, db, semitones, cents, ratio, beats };
 
+    /** Pass as skewCentre for a linear range (any value outside [min, max] also means "no skew"). */
+    constexpr float noSkew = std::numeric_limits<float>::lowest();
+
     juce::String formatValue (float value, Unit unit);
     float parseValue (const juce::String& text, Unit unit);
 
     /** Linear-range float with a unit-aware string conversion. */
     std::unique_ptr<juce::AudioParameterFloat> floatParam (const juce::String& id, const juce::String& name,
                                                            float min, float max, float def, Unit unit = Unit::none,
-                                                           float skewCentre = -1.0f, float step = 0.0f);
+                                                           float skewCentre = noSkew, float step = 0.0f);
 
     /** 0..100 % parameter. */
     std::unique_ptr<juce::AudioParameterFloat> percent (const juce::String& id, const juce::String& name, float def);

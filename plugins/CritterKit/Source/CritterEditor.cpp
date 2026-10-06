@@ -111,9 +111,10 @@ namespace
         g.fillEllipse (topLeft.x + w + 6.0f, topLeft.y + 5.5f, 5.0f, 5.0f);
     }
 
-    Image makeImage (int w, int h, float scale)
+    Image makeImage (int w, int h, float scale, bool opaque = false)
     {
-        return Image (Image::ARGB, jmax (1, roundToInt ((float) w * scale)), jmax (1, roundToInt ((float) h * scale)), true);
+        return Image (opaque ? Image::RGB : Image::ARGB, jmax (1, roundToInt ((float) w * scale)),
+                      jmax (1, roundToInt ((float) h * scale)), true);
     }
 
     float physicalScale (Graphics& g) { return jlimit (1.0f, 4.0f, g.getInternalContext().getPhysicalPixelScaleFactor()); }
@@ -228,6 +229,7 @@ CritterPad::CritterPad (CritterEditor& e, CritterProcessor& p, int v) : editor (
 {
     setTooltip (String (critter::critterName (v)) + " the " + String (critter::roleName (v)).toLowerCase()
                 + " (" + noteNames[v] + "). Click to play, drop an audio file to feed, right-click for options.");
+    setMouseCursor (MouseCursor::PointingHandCursor);
     random.setSeed ((int64) v * 977 + 13);
     blinkTimer = 1.0f + random.nextFloat() * 4.0f;
     fidgetTimer = 4.0f + random.nextFloat() * 9.0f;
@@ -247,6 +249,8 @@ void CritterPad::setSelected (bool s)
     if (selected != s)
     {
         selected = s;
+        if (s)
+            squashVel -= 4.0f; // a happy little hop
         repaint();
     }
 }
@@ -420,7 +424,10 @@ void CritterPad::tick (double dtSeconds, Point<float> mouse, bool mouseNear)
         if (std::abs (hungry - target) > 0.001f)
         {
             hungry += (target - hungry) * jmin (1.0f, dt * 10.0f);
+            if (std::abs (hungry - target) <= 0.001f)
+                hungry = target;
             animating = true;
+            fullRepaint = true; // the drop highlight covers the whole card
         }
         if (nomTime >= 0.0f)
         {
@@ -470,8 +477,12 @@ void CritterPad::tick (double dtSeconds, Point<float> mouse, bool mouseNear)
             animating = true;
         }
 
-    if (animating)
+    // only the critter's stage animates; the name plate below it is static
+    if (fullRepaint)
         repaint();
+    else if (animating)
+        repaint (0, 0, getWidth(), roundToInt (critterArea().getBottom()) + 4);
+    fullRepaint = false;
 }
 
 void CritterPad::rebuildBackground (float scale)
@@ -538,8 +549,14 @@ void CritterPad::paint (Graphics& g)
 
     if (flash > 0.0f)
     {
-        g.setColour (col.withAlpha (0.2f * flash));
-        g.fillRoundedRectangle (b, 16.0f);
+        // a soft halo pops behind the critter on every hit
+        const auto area = critterArea();
+        const float d = area.getHeight() * (0.8f + 0.35f * (1.0f - flash));
+        const auto halo = Rectangle<float> (d * 1.25f, d).withCentre ({ area.getCentreX(), area.getY() + area.getHeight() * 0.55f });
+        g.setColour (col.withAlpha (0.28f * flash));
+        g.fillEllipse (halo);
+        g.setColour (Colours::white.withAlpha (0.35f * flash));
+        g.fillEllipse (halo.reduced (d * 0.16f));
     }
     if (hovered && ! selected)
     {
@@ -791,6 +808,15 @@ int StepGrid::labelRowAt (Point<float> p) const
     return isPositiveAndBelow (row, critter::numVoices) ? row : -1;
 }
 
+void StepGrid::drawEmptyCell (Graphics& g, Rectangle<float> cell, bool hover, int row) const
+{
+    constexpr float radius = 6.0f;
+    g.setColour (Colours::white.withAlpha (hover ? 1.0f : 0.82f));
+    g.fillRoundedRectangle (cell, radius);
+    g.setColour (hover ? cc::deep (row).withAlpha (0.6f) : cc::ink.withAlpha (0.07f));
+    g.drawRoundedRectangle (cell.reduced (0.5f), radius, hover ? 1.5f : 1.0f);
+}
+
 void StepGrid::rebuildBackground (float scale)
 {
     background = makeImage (getWidth(), getHeight(), scale);
@@ -825,6 +851,11 @@ void StepGrid::rebuildBackground (float scale)
         }
     }
 
+    // empty trays (lit cells are drawn live on top)
+    for (int r = 0; r < critter::numVoices; ++r)
+        for (int st = 0; st < critter::numSteps; ++st)
+            drawEmptyCell (g, cellRect (r, st), false, r);
+
     // row labels: tiny critter + name
     for (int r = 0; r < critter::numVoices; ++r)
     {
@@ -855,10 +886,10 @@ void StepGrid::paint (Graphics& g)
     if (running && playStep >= 0)
     {
         auto col = columnRect (playStep).withTrimmedTop (laneHeight - 1.0f).reduced (2.0f, 0.0f);
-        g.setColour (Colours::white.withAlpha (0.85f));
+        g.setColour (Colour (0xffffe27a).withAlpha (0.55f));
         g.fillRoundedRectangle (col, 9.0f);
-        g.setColour (cc::ink.withAlpha (0.12f));
-        g.drawRoundedRectangle (col, 9.0f, 1.0f);
+        g.setColour (Colour (0xffffc23d).withAlpha (0.8f));
+        g.drawRoundedRectangle (col.reduced (0.5f), 9.0f, 1.5f);
     }
 
     for (int r = 0; r < critter::numVoices; ++r)
@@ -869,6 +900,8 @@ void StepGrid::paint (Graphics& g)
         for (int s = 0; s < critter::numSteps; ++s)
         {
             auto cell = cellRect (r, s);
+            if (! g.clipRegionIntersects (cell.expanded (5.0f).toNearestInt()))
+                continue;
             const bool on = ((bits >> s) & 1u) != 0;
             const bool acc = ((bits >> (16 + s)) & 1u) != 0;
             const bool hover = r == hoverRow && s == hoverStep;
@@ -876,10 +909,9 @@ void StepGrid::paint (Graphics& g)
 
             if (! on)
             {
-                g.setColour (Colours::white.withAlpha (hover ? 1.0f : 0.82f));
-                g.fillRoundedRectangle (cell, radius);
-                g.setColour (hover ? deep.withAlpha (0.6f) : cc::ink.withAlpha (0.07f));
-                g.drawRoundedRectangle (cell.reduced (0.5f), radius, hover ? 1.5f : 1.0f);
+                // empty trays live in the cached background, except under the playhead or the mouse
+                if (hover || (running && s == playStep))
+                    drawEmptyCell (g, cell, hover, r);
                 continue;
             }
 
@@ -912,15 +944,17 @@ void StepGrid::paint (Graphics& g)
     // bouncing playhead ball
     if (running && playStep >= 0)
     {
+        // sits on the playing step, then hops over to the next one just before it plays
         const float p = (float) phase;
         const float x0 = stepX (playStep) + cellPitch() * 0.5f;
         const float x1 = playStep == critter::numSteps - 1 ? x0 + cellPitch() : stepX (playStep + 1) + cellPitch() * 0.5f;
-        const float x = x0 + (x1 - x0) * p;
-        const float hop = 4.0f * p * (1.0f - p);
+        const float u = jlimit (0.0f, 1.0f, (p - 0.55f) / 0.45f);
+        const float x = x0 + (x1 - x0) * u;
+        const float hop = 4.0f * u * (1.0f - u);
         const float r = 5.5f;
         const float ground = laneHeight - r - 1.0f;
         const float y = ground - hop * (laneHeight - 2.0f * r - 1.0f);
-        const float sq = (1.0f - jlimit (0.0f, 1.0f, hop * 4.0f)) * 0.3f;
+        const float sq = 0.32f * jmax (0.0f, 1.0f - p / 0.18f) - 0.12f * hop; // squash on landing, stretch mid-air
         const auto c = cc::critter (playStep % critter::numVoices);
         auto ball = Rectangle<float> (r * 2.0f * (1.0f + sq), r * 2.0f * (1.0f - sq)).withCentre ({ x, y + r * sq });
         g.setColour (c);
@@ -1143,6 +1177,20 @@ Rectangle<float> CardHeader::chipArea() const
     return { 0.0f, (float) getHeight() - 24.0f, (float) getWidth(), 24.0f };
 }
 
+Rectangle<float> CardHeader::diceArea() const
+{
+    return { (float) getWidth() - 30.0f, 4.0f, 28.0f, 28.0f };
+}
+
+void CardHeader::tick (double dt)
+{
+    if (diceSpin > 0.0f)
+    {
+        diceSpin = jmax (0.0f, diceSpin - (float) dt * 2.5f);
+        repaint (diceArea().expanded (8.0f).toNearestInt());
+    }
+}
+
 Rectangle<float> CardHeader::closeArea() const
 {
     auto chip = chipArea();
@@ -1176,6 +1224,31 @@ void CardHeader::paint (Graphics& g)
     g.setColour (cc::ink.withAlpha (0.66f));
     g.setFont (aa::Fonts::ui (12.5f));
     g.drawText (personalities[voice], Rectangle<float> (2.0f, 38.0f, b.getWidth(), 16.0f), Justification::centredLeft, true);
+
+    // dice: roll a new sound for this critter
+    {
+        const auto d = diceArea().reduced (2.0f);
+        const float e = diceSpin * diceSpin;
+        const float angle = e * pi * 1.5f;
+        const float lift = std::sin (diceSpin * pi) * 5.0f;
+        const auto xf = AffineTransform::rotation (angle, d.getCentreX(), d.getCentreY()).translated (0.0f, -lift);
+        Path box;
+        box.addRoundedRectangle (d, 6.0f);
+        g.setColour (cc::ink.withAlpha (0.12f));
+        g.fillEllipse (Rectangle<float> (d.getWidth() * (1.0f - lift * 0.04f), 5.0f).withCentre ({ d.getCentreX(), d.getBottom() + 2.0f }));
+        g.setColour (diceHover ? col.brighter (0.3f) : Colours::white);
+        g.fillPath (box, xf);
+        g.setColour (cc::ink);
+        g.strokePath (box, PathStrokeType (1.6f), xf);
+        const float pr = 2.1f, o = d.getWidth() * 0.27f;
+        const auto c = d.getCentre();
+        for (auto off : { Point<float> (-o, -o), Point<float> (o, -o), Point<float> (0.0f, 0.0f), Point<float> (-o, o), Point<float> (o, o) })
+        {
+            const auto pc = (c + off).transformedBy (xf);
+            g.setColour (diceHover ? cc::ink : deep);
+            g.fillEllipse (Rectangle<float> (pr * 2.0f, pr * 2.0f).withCentre (pc));
+        }
+    }
 
     // what it has eaten
     auto chip = chipArea();
@@ -1222,6 +1295,12 @@ void CardHeader::paint (Graphics& g)
 
 void CardHeader::mouseDown (const MouseEvent& e)
 {
+    if (diceArea().contains (e.position))
+    {
+        editor.rollDice (voice);
+        spinDice();
+        return;
+    }
     if (proc.getSample (voice) != nullptr && closeArea().contains (e.position))
     {
         proc.clearSample (voice);
@@ -1236,12 +1315,17 @@ void CardHeader::mouseDown (const MouseEvent& e)
 void CardHeader::mouseMove (const MouseEvent& e)
 {
     const bool h = proc.getSample (voice) != nullptr && closeArea().contains (e.position);
-    if (h != closeHover)
+    const bool dh = diceArea().contains (e.position);
+    if (h != closeHover || dh != diceHover)
     {
         closeHover = h;
+        diceHover = dh;
         repaint();
     }
-    if (proc.getSample (voice) != nullptr)
+    setMouseCursor (h || dh || chipArea().contains (e.position) ? MouseCursor::PointingHandCursor : MouseCursor::NormalCursor);
+    if (dh)
+        setTooltip ("Roll the dice: a random new tune, decay, tone and snap for " + String (critter::critterName (voice)));
+    else if (proc.getSample (voice) != nullptr)
         setTooltip (closeHover ? "Back to synth" : "Fed with: " + proc.getSample (voice)->filePath);
     else
         setTooltip ("Drag an audio file (wav, aiff, flac, mp3, ogg) onto " + String (critter::critterName (voice))
@@ -1370,7 +1454,7 @@ void CritterEditor::showSampleMenu (int v, Component* target)
     m.setLookAndFeel (&getLookAndFeel());
     m.addSectionHeader (name + " the " + String (critter::roleName (v)).toLowerCase());
     m.addItem (1, "Play " + name);
-    m.addItem (2, fed ? "Feed a different sample..." : "Feed a sample...");
+    m.addItem (2, fed ? "Load a different sample..." : "Load sample...");
     m.addItem (3, "Back to synth", fed);
     if (fed && File::isAbsolutePath (proc.getSample (v)->filePath) && File (proc.getSample (v)->filePath).existsAsFile())
         m.addItem (4, "Show sample file");
@@ -1411,6 +1495,31 @@ void CritterEditor::chooseSampleFile (int v)
                               safe->proc.loadSampleAsync (v, file);
                               safe->pads[(size_t) v]->startNom();
                           });
+}
+
+void CritterEditor::rollDice (int v)
+{
+    Random rng;
+    auto set = [this, v] (const char* id, float value)
+    {
+        if (auto* p = proc.param (CritterProcessor::voiceParamId (v, id)))
+        {
+            p->beginChangeGesture();
+            p->setValueNotifyingHost (p->convertTo0to1 (value));
+            p->endChangeGesture();
+        }
+    };
+
+    float decayDefault = 300.0f;
+    if (auto* p = proc.param (CritterProcessor::voiceParamId (v, "decay")))
+        decayDefault = p->convertFrom0to1 (p->getDefaultValue());
+
+    // musical ranges: whole semitones, decay within a couple of octaves of the critter's nature
+    set ("tune", (float) roundToInt ((rng.nextFloat() * 2.0f - 1.0f) * (v == critter::kick ? 4.0f : 7.0f)));
+    set ("decay", jlimit (15.0f, 3000.0f, decayDefault * std::pow (2.0f, rng.nextFloat() * 2.6f - 1.3f)));
+    set ("tone", 10.0f + rng.nextFloat() * 80.0f);
+    set ("snap", 10.0f + rng.nextFloat() * 80.0f);
+    audition (v);
 }
 
 void CritterEditor::layoutContent()
@@ -1463,7 +1572,7 @@ void CritterEditor::layoutContent()
 
 void CritterEditor::rebuildBackground (float scale)
 {
-    background = makeImage (baseWidth, baseHeight, scale);
+    background = makeImage (baseWidth, baseHeight, scale, true);
     Graphics g (background);
     g.addTransform (AffineTransform::scale (scale));
     auto b = baseBounds().toFloat();
@@ -1527,31 +1636,75 @@ void CritterEditor::paintContent (Graphics& g)
         rebuildBackground (scale);
     g.drawImage (background, baseBounds().toFloat());
 
+    if (! g.clipRegionIntersects (titleArea.toNearestInt()))
+        return;
+
     // Title: every letter belongs to a critter and hops when it plays.
-    const String title = "Critter Kit";
-    const auto font = aa::Fonts::display (40.0f);
-    float x = titleArea.getX() + 6.0f;
-    int letter = 0;
-    for (int i = 0; i < title.length(); ++i)
+    // Letters are pre-rendered into small images and blitted at whole device pixels.
+    if (titleLetters.empty())
     {
-        const String ch = title.substring (i, i + 1);
-        if (ch == " ")
+        const String title = "Critter Kit";
+        const auto font = aa::Fonts::display (40.0f);
+        float x = titleArea.getX() + 6.0f;
+        for (int i = 0; i < title.length(); ++i)
         {
-            x += aa::Fonts::textWidth (font, ch) * 0.8f;
-            continue;
+            const String ch = title.substring (i, i + 1);
+            if (ch == " ")
+            {
+                x += aa::Fonts::textWidth (font, ch) * 0.8f;
+                continue;
+            }
+            GlyphArrangement ga;
+            ga.addLineOfText (font, ch, x, 46.0f);
+            Path p, outline;
+            ga.createPath (p);
+            PathStrokeType (6.0f, PathStrokeType::curved, PathStrokeType::rounded).createStrokedPath (outline, p);
+            titleLetters.push_back (p);
+            titleOutlines.push_back (outline);
+            x += aa::Fonts::textWidth (font, ch) + 0.5f;
         }
-        const float y = 46.0f + letterBounce[(size_t) letter];
-        drawOutlinedText (g, ch, font, { x, y }, cc::critter (letter % critter::numVoices), cc::ink, 6.0f);
-        x += aa::Fonts::textWidth (font, ch) + 0.5f;
-        ++letter;
+        titleEnd = x;
+    }
+
+    if (titleImages.size() != titleLetters.size() || std::abs (titleImageScale - scale) > 0.001f)
+    {
+        titleImages.clear();
+        titleImageScale = scale;
+        for (size_t i = 0; i < titleLetters.size(); ++i)
+        {
+            const auto bounds = titleOutlines[i].getBounds().expanded (1.0f).getSmallestIntegerContainer();
+            Image img (Image::ARGB, jmax (1, roundToInt ((float) bounds.getWidth() * scale)),
+                       jmax (1, roundToInt ((float) bounds.getHeight() * scale)), true);
+            Graphics ig (img);
+            ig.addTransform (AffineTransform::translation ((float) -bounds.getX(), (float) -bounds.getY()).scaled (scale));
+            ig.setColour (cc::ink);
+            ig.fillPath (titleOutlines[i]);
+            ig.setColour (cc::critter ((int) i % critter::numVoices));
+            ig.fillPath (titleLetters[i]);
+            titleImages.push_back ({ img, bounds.toFloat() });
+        }
+    }
+
+    for (size_t i = 0; i < titleImages.size(); ++i)
+    {
+        const float bounce = std::round (letterBounce[i % letterBounce.size()] * scale) / scale;
+        const auto& [img, area] = titleImages[i];
+        g.drawImage (img, area.translated (0.0f, bounce));
     }
     g.setColour (cc::ink.withAlpha (0.55f));
     g.setFont (aa::Fonts::uiBold (10.5f).withExtraKerningFactor (0.16f));
-    g.drawText ("CREATURE DRUM MACHINE", Rectangle<float> (x + 14.0f, 25.0f, 220.0f, 24.0f), Justification::centredLeft, false);
+    g.drawText ("CREATURE DRUM MACHINE", Rectangle<float> (titleEnd + 14.0f, 25.0f, 220.0f, 24.0f), Justification::centredLeft, false);
 }
 
-void CritterEditor::onFrame (double, double dt)
+void CritterEditor::onFrame (double, double frameDt)
 {
+    // cap animation work at ~60 fps, even on 120 Hz displays
+    pendingDt += frameDt;
+    if (pendingDt < 1.0 / 62.0)
+        return;
+    const double dt = jmin (0.1, pendingDt);
+    pendingDt = 0.0;
+
     // hits from the audio thread
     CritterProcessor::Hit h;
     while (proc.hits.pop (h))
@@ -1598,6 +1751,7 @@ void CritterEditor::onFrame (double, double dt)
     for (auto& pad : pads)
         pad->tick (dt, mouse, near);
     grid.tick (dt);
+    card.tick (dt);
 
     // title letters: damped springs
     bool moving = false;
@@ -1627,3 +1781,4 @@ void CritterEditor::onFrame (double, double dt)
     if (proc.hostNotifyPending.exchange (false))
         proc.notifyStateChanged();
 }
+

@@ -27,7 +27,7 @@ AudioProcessorValueTreeState::ParameterLayout GremlinProcessor::createLayout()
     layout.add (P::toggle ("forceReverse", "Force Reverse", false));
     layout.add (P::toggle ("forceTape", "Force Tape Stop", false));
     layout.add (P::toggle ("forceHalf", "Force Half Speed", false));
-    layout.add (P::floatParam ("ratchet", "Ratchet", -12.0f, 12.0f, 0.0f, P::Unit::semitones, -1.0f, 1.0f));
+    layout.add (P::floatParam ("ratchet", "Ratchet", -12.0f, 12.0f, 0.0f, P::Unit::semitones, P::noSkew, 1.0f));
 
     layout.add (P::percent ("wStutter", "Stutter Odds", 70.0f));
     layout.add (P::percent ("wReverse", "Reverse Odds", 40.0f));

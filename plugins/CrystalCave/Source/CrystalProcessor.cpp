@@ -8,7 +8,7 @@ namespace
 {
     /** aa::params::floatParam with an optional skew; text parsing (kHz / ms / s) comes from the kit. */
     std::unique_ptr<AudioParameterFloat> unitParam (const String& id, const String& name, float min, float max,
-                                                    float def, P::Unit unit, float skewCentre = -1.0f)
+                                                    float def, P::Unit unit, float skewCentre = P::noSkew)
     {
         NormalisableRange<float> range (min, max);
         if (skewCentre > min && skewCentre < max)

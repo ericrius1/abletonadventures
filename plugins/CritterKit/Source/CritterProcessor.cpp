@@ -84,7 +84,9 @@ AudioProcessorValueTreeState::ParameterLayout CritterProcessor::createLayout()
     layout.add (P::percent ("room", "Room", 15.0f));
     layout.add (P::percent ("accent", "Accent", 50.0f));
     layout.add (P::percent ("humanize", "Humanize", 10.0f));
-    layout.add (P::floatParam ("pitch", "Kit Pitch", -12.0f, 12.0f, 0.0f, P::Unit::semitones));
+    // Note: bipolar ranges pass an explicit skew centre of 0 (= linear). The kit's default
+    // skewCentre of -1 would otherwise fall inside the range and skew it.
+    layout.add (P::floatParam ("pitch", "Kit Pitch", -12.0f, 12.0f, 0.0f, P::Unit::semitones, 0.0f));
     layout.add (P::toggle ("seq_on", "Sequencer", true));
 
     // Then each critter's six controls, contiguous.
@@ -92,7 +94,7 @@ AudioProcessorValueTreeState::ParameterLayout CritterProcessor::createLayout()
     {
         const String role (critter::roleName (v));
         const auto& d = voiceDefaults[v];
-        layout.add (P::floatParam (voiceParamId (v, "tune"), role + " Tune", -24.0f, 24.0f, d.tune, P::Unit::semitones));
+        layout.add (P::floatParam (voiceParamId (v, "tune"), role + " Tune", -24.0f, 24.0f, d.tune, P::Unit::semitones, 0.0f));
         layout.add (P::floatParam (voiceParamId (v, "decay"), role + " Decay", 10.0f, 4000.0f, d.decayMs, P::Unit::ms, 300.0f));
         layout.add (P::percent (voiceParamId (v, "tone"), role + " Tone", d.tone));
         layout.add (P::percent (voiceParamId (v, "snap"), role + " Snap", d.snap));
@@ -199,12 +201,12 @@ CritterProcessor::CritterProcessor()
 
         { "Minimal Moths",
           { { "swing", 8.0f }, { "drive", 10.0f }, { "room", 40.0f }, { "humanize", 15.0f },
-            { "k1_decay", 420.0f }, { "k3_level", -6.0f }, { "k3_decay", 450.0f },
+            { "k1_decay", 420.0f }, { "k3_level", -9.0f }, { "k3_decay", 450.0f },
             { "k4_decay", 45.0f }, { "k4_tone", 60.0f },
             { "k7_snap", 95.0f }, { "k7_tune", 5.0f }, { "k7_decay", 80.0f }, { "k7_level", -8.0f },
             { "k8_decay", 30.0f }, { "k8_tune", 12.0f }, { "k8_tone", 20.0f }, { "k8_level", -12.0f } },
-          withPattern ({ "X...X...X...X...", "................", "............X...", "..x...x...x...x.",
-                         "................", "................", ".x....x..x...x..", "......x........." }) },
+          withPattern ({ "X...x...x...x...", "................", "............x...", "..x...x...x...x.",
+                         "................", "................", ".x....X..x...x..", "......x........." }) },
 
         { "Tribal Turtles",
           { { "swing", 12.0f }, { "drive", 30.0f }, { "room", 30.0f }, { "humanize", 25.0f },
@@ -541,46 +543,77 @@ void CritterProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& mid
         const double ppqPerSample = transport.samplesToPpq (1.0);
         const double ppq0 = transport.ppqAtBlockStart;
         const double ppq1 = ppq0 + ppqPerSample * numSamples;
-
-        if (transport.justStarted || ppq0 < expectedPpq - 0.01)
-            lastStepIndex = std::numeric_limits<int64_t>::min(); // started, or the host looped back
-        expectedPpq = ppq1;
-
         const float accentAmt = accent->load() / 100.0f;
         const float human = humanize->load() / 100.0f;
-        const auto firstStep = (int64_t) std::floor (ppq0 / stepLen) - 1;
-        const auto lastStep = (int64_t) std::floor (ppq1 / stepLen);
 
-        for (auto n = firstStep; n <= lastStep; ++n)
+        // Host loop points, so a loop that wraps in the middle of this block still plays its first step.
+        bool looping = false;
+        double loopStart = 0.0, loopEnd = 0.0;
+        if (auto* ph = getPlayHead())
+            if (auto pos = ph->getPosition())
+                if (pos->getIsLooping())
+                    if (auto lp = pos->getLoopPoints())
+                    {
+                        loopStart = lp->ppqStart;
+                        loopEnd = lp->ppqEnd;
+                        looping = loopEnd > loopStart + stepLen * 0.5;
+                    }
+
+        if (transport.justStarted || ppq0 < expectedPpq - 0.01)
+            lastStepIndex = std::numeric_limits<int64_t>::min(); // started, or the host jumped back
+
+        auto playSteps = [&] (double from, double to, double sampleBase)
         {
-            if (n <= lastStepIndex)
-                continue;
-            const double t = (double) n * stepLen + ((n & 1) != 0 ? swingPpq : 0.0);
-            if (t < ppq0 || t >= ppq1)
-                continue;
-
-            lastStepIndex = n;
-            const int offset = jlimit (0, numSamples - 1, (int) ((t - ppq0) / ppqPerSample));
-            const int step = (int) (((n % critter::numSteps) + critter::numSteps) % critter::numSteps);
-
-            for (int r = 0; r < critter::numVoices; ++r)
+            // Steps we should already have played (tiny host jitter, swing just changed) still fire, late,
+            // as long as playback is continuous.
+            const bool allowLate = lastStepIndex != std::numeric_limits<int64_t>::min();
+            const auto firstStep = (int64_t) std::floor (from / stepLen) - 1;
+            const auto lastStep = (int64_t) std::floor (to / stepLen);
+            for (auto n = firstStep; n <= lastStep; ++n)
             {
-                const auto bits = rows[(size_t) r].load (std::memory_order_relaxed);
-                if (((bits >> step) & 1u) == 0)
+                if (n <= lastStepIndex)
                     continue;
-                const bool acc = ((bits >> (16 + step)) & 1u) != 0;
-                float vel = acc ? 1.0f : 1.0f - 0.5f * accentAmt;
-                float detune = 0.0f;
-                if (human > 0.0f)
-                {
-                    vel *= 1.0f - human * 0.35f * humanRng.next01();
-                    detune = human * 0.25f * humanRng.nextBipolar();
-                }
-                addEvent (offset, r, vel, detune, 0);
-            }
-        }
+                const double t = (double) n * stepLen + ((n & 1) != 0 ? swingPpq : 0.0);
+                if (t >= to || t < (allowLate ? from - stepLen : from))
+                    continue;
 
-        const double stepPos = ppq1 / stepLen;
+                lastStepIndex = n;
+                const int offset = jlimit (0, numSamples - 1, (int) (sampleBase + jmax (0.0, t - from) / ppqPerSample));
+                const int step = (int) (((n % critter::numSteps) + critter::numSteps) % critter::numSteps);
+
+                for (int r = 0; r < critter::numVoices; ++r)
+                {
+                    const auto bits = rows[(size_t) r].load (std::memory_order_relaxed);
+                    if (((bits >> step) & 1u) == 0)
+                        continue;
+                    const bool acc = ((bits >> (16 + step)) & 1u) != 0;
+                    float vel = acc ? 1.0f : 1.0f - 0.5f * accentAmt;
+                    float detune = 0.0f;
+                    if (human > 0.0f)
+                    {
+                        vel *= 1.0f - human * 0.35f * humanRng.next01();
+                        detune = human * 0.25f * humanRng.nextBipolar();
+                    }
+                    addEvent (offset, r, vel, detune, 0);
+                }
+            }
+        };
+
+        double endPpq = ppq1;
+        if (looping && ppq0 < loopEnd && ppq1 > loopEnd)
+        {
+            playSteps (ppq0, loopEnd, 0.0);
+            lastStepIndex = std::numeric_limits<int64_t>::min();
+            endPpq = loopStart + (ppq1 - loopEnd);
+            playSteps (loopStart, endPpq, (loopEnd - ppq0) / ppqPerSample);
+        }
+        else
+        {
+            playSteps (ppq0, ppq1, 0.0);
+        }
+        expectedPpq = endPpq;
+
+        const double stepPos = endPpq / stepLen;
         const auto stepIndex = (int64_t) std::floor (stepPos);
         uiStep.store ((int) (((stepIndex % critter::numSteps) + critter::numSteps) % critter::numSteps));
         uiStepPhase.store (stepPos - std::floor (stepPos));
@@ -678,13 +711,16 @@ void CritterProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& mid
             l += wl;
             r += wr;
 
+            // Drive: blend towards a normalised soft-clipper, so 0% is exactly bypass and the
+            // amount can be automated without any step in level.
             const float d = driveSm.next();
-            if (d > 0.0005f)
+            if (d > 0.0f)
             {
                 const float g = 1.0f + 3.0f * d;
                 const float norm = 0.6f / aa::dsp::softClip (0.6f * g);
-                l = aa::dsp::softClip (l * g) * norm;
-                r = aa::dsp::softClip (r * g) * norm;
+                const float wet = jmin (1.0f, d * 5.0f);
+                l += (aa::dsp::softClip (l * g) * norm - l) * wet;
+                r += (aa::dsp::softClip (r * g) * norm - r) * wet;
             }
 
             const float vol = volumeSm.next();

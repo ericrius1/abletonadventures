@@ -96,6 +96,7 @@ public:
         levelSm.reset (sr, 0.02, 1.0f);
         panSm.reset (sr, 0.03, 0.0f);
         tailCoeff = tauCoeff (0.0015f, sr);
+        smoothCoeff = 1.0f - tauCoeff (0.01f, sr);
         reset();
     }
 
@@ -251,7 +252,7 @@ private:
         float dt[6] {};
         float amp = 0.0f, ampC = 0.0f;
         float e2 = 0.0f, e2C = 0.0f, e3 = 0.0f, e3C = 0.0f, e4 = 0.0f, e4C = 0.0f;
-        float c[8] {};
+        float c[10] {};
         float lp = 0.0f;
         aa::dsp::Svf f1, f2, f3;
 
@@ -362,8 +363,13 @@ private:
             {
                 s.dt[0] = 47.0f * ratio / sr;
                 s.ampC = t60Coeff (decay, sr);
-                s.c[2] = 1.0f + tone * tone * 5.0f;                  // drive into the sine
-                s.c[3] = 1.0f / aa::dsp::softClip (s.c[2]);
+                s.c[8] = 1.0f + tone * tone * 5.0f;                  // drive into the sine (target)
+                s.c[9] = 1.0f / aa::dsp::softClip (s.c[8]);
+                if (fresh)
+                {
+                    s.c[2] = s.c[8];
+                    s.c[3] = s.c[9];
+                }
                 s.c[4] = 1.0f - std::exp (-aa::dsp::twoPi * std::min (0.45f * sr, 1500.0f + 7000.0f * tone) / sr);
                 if (fresh)
                 {
@@ -445,11 +451,14 @@ private:
             {
                 s.dt[0] = 98.0f * ratio / sr;
                 s.ampC = t60Coeff (decay, sr);
-                s.c[2] = tone * 0.55f;
-                s.c[3] = 1.0f + tone * 2.5f;
-                s.c[4] = 1.0f / aa::dsp::softClip (s.c[3]);
+                s.c[7] = tone * 0.55f;                               // targets, glided per sample
+                s.c[8] = 1.0f + tone * 2.5f;
+                s.c[9] = 1.0f / aa::dsp::softClip (s.c[8]);
                 if (fresh)
                 {
+                    s.c[2] = s.c[7];
+                    s.c[3] = s.c[8];
+                    s.c[4] = s.c[9];
                     s.amp = 1.0f;
                     s.e2 = 1.0f;
                     s.e2C = tauCoeff (0.03f + 0.06f * (1.0f - snap), sr);
@@ -502,9 +511,13 @@ private:
         {
             case kick:
             {
-                const float base = s.dt[0], depth = s.c[1], drive = s.c[2], norm = s.c[3], clickLp = s.c[4], clickAmt = s.c[5];
+                const float base = s.dt[0], depth = s.c[1], clickLp = s.c[4], clickAmt = s.c[5];
+                float drive = s.c[2], norm = s.c[3];
+                const float driveTarget = s.c[8], normTarget = s.c[9], glide = smoothCoeff;
                 for (int i = 0; i < n; ++i)
                 {
+                    drive += (driveTarget - drive) * glide;
+                    norm += (normTarget - norm) * glide;
                     s.ph[0] = wrap01 (s.ph[0] + std::min (0.45f, base * (1.0f + depth * s.e2)));
                     s.e2 *= s.e2C;
                     const float body = aa::dsp::softClip (sin01 (s.ph[0]) * drive) * norm;
@@ -517,6 +530,8 @@ private:
                     out[i] = body * s.amp * 0.9f + s.lp * s.e3 * clickAmt;
                     s.e3 *= s.e3C;
                 }
+                s.c[2] = drive;
+                s.c[3] = norm;
                 if (s.amp < 1.0e-4f && s.age >= s.hold)
                     s.active = false;
                 break;
@@ -599,9 +614,14 @@ private:
             }
             case tom:
             {
-                const float sweep = s.c[1], triMix = s.c[2], drive = s.c[3], norm = s.c[4], clickAmt = s.c[5], lpc = s.c[6];
+                const float sweep = s.c[1], clickAmt = s.c[5], lpc = s.c[6];
+                float triMix = s.c[2], drive = s.c[3], norm = s.c[4];
+                const float glide = smoothCoeff;
                 for (int i = 0; i < n; ++i)
                 {
+                    triMix += (s.c[7] - triMix) * glide;
+                    drive += (s.c[8] - drive) * glide;
+                    norm += (s.c[9] - norm) * glide;
                     s.ph[0] = wrap01 (s.ph[0] + std::min (0.45f, s.dt[0] * (1.0f + sweep * s.e2)));
                     s.e2 *= s.e2C;
                     const float osc = sin01 (s.ph[0]) * (1.0f - triMix) + tri01 (s.ph[0]) * triMix;
@@ -611,6 +631,9 @@ private:
                     s.amp *= s.ampC;
                     s.e3 *= s.e3C;
                 }
+                s.c[2] = triMix;
+                s.c[3] = drive;
+                s.c[4] = norm;
                 if (s.amp < 1.0e-4f)
                     s.active = false;
                 break;
@@ -732,7 +755,7 @@ private:
     VoiceSettings live;
     aa::dsp::Smoother levelSm, panSm;
     aa::dsp::Rng rng;
-    float tailL = 0.0f, tailR = 0.0f, tailCoeff = 0.99f;
+    float tailL = 0.0f, tailR = 0.0f, tailCoeff = 0.99f, smoothCoeff = 0.002f;
     float tmpL[maxChunk] {}, tmpR[maxChunk] {}, gainL[maxChunk] {}, gainR[maxChunk] {};
 };
 } // namespace critter

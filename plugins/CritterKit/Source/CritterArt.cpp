@@ -139,18 +139,26 @@ namespace
             g.fillEllipse (sclera);
 
             {
+                // Only a half-closed eye needs clipping; open pupils are kept inside the sclera.
+                const bool clipNeeded = open < 0.99f;
                 Graphics::ScopedSaveState ss (g);
-                Path clip;
-                clip.addEllipse (sclera);
-                g.reduceClipRegion (clip);
+                if (clipNeeded)
+                {
+                    Path clip;
+                    clip.addEllipse (sclera);
+                    g.reduceClipRegion (clip);
+                }
                 const float pr = rx * 0.6f;
-                const auto pc = c.translated (pose.look.x * rx * 0.42f, pose.look.y * ry * 0.36f + ry * (1.0f - open) * 0.5f);
+                auto lk = pose.look;
+                if (lk.getDistanceFromOrigin() > 1.0f)
+                    lk /= lk.getDistanceFromOrigin();
+                const auto pc = c.translated (lk.x * rx * 0.36f, lk.y * ry * 0.3f + ry * (1.0f - open) * 0.5f);
                 g.setColour (ink);
                 g.fillEllipse (Rectangle<float> (pr * 2.0f, pr * 2.1f).withCentre (pc));
                 g.setColour (Colours::white);
                 g.fillEllipse (Rectangle<float> (pr * 0.7f, pr * 0.7f).withCentre (pc.translated (-pr * 0.32f, -pr * 0.38f)));
 
-                if (open < 0.99f)
+                if (clipNeeded)
                 {
                     // eyelid in body colour
                     g.setColour (base.darker (0.05f));
@@ -181,11 +189,11 @@ namespace
             g.setColour (Colour (0xff5a2346));
             g.fillPath (mp);
             {
-                Graphics::ScopedSaveState ss (g);
-                g.reduceClipRegion (mp);
-                auto mb = mp.getBounds();
+                // tongue (sized to sit inside the mouth, so no clipping needed)
+                const auto mb = mp.getBounds();
                 g.setColour (Colour (0xffff7d9c));
-                g.fillEllipse (mb.withTop (mb.getY() + mb.getHeight() * 0.55f).expanded (mb.getWidth() * 0.05f, mb.getHeight() * 0.2f));
+                g.fillEllipse (Rectangle<float> (mb.getWidth() * 0.62f, mb.getHeight() * 0.42f)
+                                   .withCentre ({ mb.getCentreX(), mb.getBottom() - mb.getHeight() * 0.27f }));
             }
             g.setColour (colours::ink);
             g.strokePath (mp, PathStrokeType (lw, PathStrokeType::curved, PathStrokeType::rounded));
@@ -397,8 +405,10 @@ void drawCritter (Graphics& g, int kind, Rectangle<float> area, const Pose& pose
     g.fillPath (body);
 
     {
+        const bool hasDetails = kind == 0 || kind == 4 || kind == 5 || kind == 6 || kind == 7;
         Graphics::ScopedSaveState ss (g);
-        g.reduceClipRegion (body);
+        if (hasDetails)
+            g.reduceClipRegion (body);
 
         switch (kind)
         {
@@ -430,12 +440,18 @@ void drawCritter (Graphics& g, int kind, Rectangle<float> area, const Pose& pose
                 g.setColour (Colour (0xfffff1dc).withAlpha (0.4f));
                 g.fillPath (P.t (ellipseAt (0.0f, -H * 0.06f, W * 0.62f, H * 0.36f)));
                 break;
-            case 6: // spots
+            case 6: // spots + collar
+            {
                 g.setColour (Colour (0xffd94f97).withAlpha (0.5f));
                 g.fillPath (P.t (ellipseAt (-W * 0.3f, -H * 0.78f, 0.17f, 0.12f, 0.4f)));
                 g.fillPath (P.t (ellipseAt (W * 0.34f, -H * 0.24f, 0.18f, 0.15f, -0.3f)));
                 g.fillPath (P.t (ellipseAt (-W * 0.36f, -H * 0.12f, 0.12f, 0.09f)));
+                Path collar;
+                collar.startNewSubPath (-W, -H * 0.15f);
+                collar.quadraticTo (0.0f, -H * 0.06f, W, -H * 0.15f);
+                P.stroke (collar, Colour (0xff7b5cff), 2.4f);
                 break;
+            }
             case 7: // freckles
                 g.setColour (Colours::white.withAlpha (0.45f));
                 g.fillPath (P.t (ellipseAt (-W * 0.3f, -H * 0.76f, 0.05f, 0.05f)));
@@ -536,14 +552,6 @@ void drawCritter (Graphics& g, int kind, Rectangle<float> area, const Pose& pose
             g.fillPath (P.t (ellipseAt (0.055f, -H * 0.4f, 0.03f, 0.04f)));
             P.mouth (0.0f, mouthY, shape.mouthW, open);
 
-            {
-                Graphics::ScopedSaveState ss (g);
-                g.reduceClipRegion (body);
-                Path collar;
-                collar.startNewSubPath (-W, -H * 0.15f);
-                collar.quadraticTo (0.0f, -H * 0.06f, W, -H * 0.15f);
-                P.stroke (collar, Colour (0xff7b5cff), 2.4f);
-            }
 
             const float swing = std::sin (time * 15.0f) * 0.55f * act;
             const float hx = 0.0f, hy = -H * 0.105f;
