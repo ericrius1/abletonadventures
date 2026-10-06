@@ -1,0 +1,20 @@
+{
+  "plugin": "TapeDreams",
+  "preset": "Lo-Fi Study Beats",
+  "params": [
+    "Wow=0%",
+    "Flutter=3%",
+    "Age=30%"
+  ],
+  "automations": [
+    "Wow=0%:90%@4.0:8.0",
+    "Flutter=3%:45%@4.0:8.0",
+    "Age=30%:88%@4.0:8.0"
+  ],
+  "inputFile": "/home/user/video/feeds/band.wav",
+  "builtinMidi": "none",
+  "width": 1320,
+  "recordSeconds": 11,
+  "clipStart": 4.0,
+  "clipDuration": 6.0
+}

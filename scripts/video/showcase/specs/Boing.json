@@ -1,0 +1,19 @@
+{
+  "plugin": "Boing",
+  "preset": "Rubber Ball",
+  "params": [
+    "Drop Time=375 ms",
+    "Spread=100%",
+    "Mix=50%",
+    "Bounciness=68%"
+  ],
+  "automations": [
+    "Bounciness=68%:92%@4.0:6.5"
+  ],
+  "inputFile": "../inputs/drums_halftime.flac",
+  "builtinMidi": "none",
+  "width": 1320,
+  "recordSeconds": 11,
+  "clipStart": 4.0,
+  "clipDuration": 6.0
+}

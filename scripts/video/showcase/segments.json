@@ -1,0 +1,146 @@
+[
+ {
+  "plugin": "Boing",
+  "title": "BOING!",
+  "tagline": "echoes that bounce like a ball",
+  "kind": "effect",
+  "font": "LuckiestGuy-Regular.ttf",
+  "titleColor": "#FF5A5F",
+  "titleStroke": 4,
+  "accent": "#FFB830",
+  "colors": [
+   "#3D8BEA",
+   "#3B2A8E"
+  ],
+  "clipStart": 4.0,
+  "clipDuration": 6
+ },
+ {
+  "plugin": "Stardust",
+  "title": "STARDUST",
+  "tagline": "a supersaw pad full of stars",
+  "kind": "instrument",
+  "font": "Audiowide-Regular.ttf",
+  "titleColor": "#8FF6FF",
+  "titleStroke": 0,
+  "accent": "#FF6AD5",
+  "colors": [
+   "#1C1050",
+   "#04051A"
+  ],
+  "clipStart": 4,
+  "clipDuration": 6
+ },
+ {
+  "plugin": "Gremlin",
+  "title": "GREMLIN",
+  "tagline": "a dice-rolling glitch goblin",
+  "kind": "effect",
+  "font": "RubikGlitch-Regular.ttf",
+  "titleColor": "#8cff3a",
+  "titleStroke": 0,
+  "accent": "#ff3d8b",
+  "colors": [
+   "#3a1468",
+   "#0f0824"
+  ],
+  "clipStart": 4,
+  "clipDuration": 6
+ },
+ {
+  "plugin": "Babble",
+  "title": "Babble",
+  "tagline": "a synth that sings gibberish",
+  "kind": "instrument",
+  "font": "Chewy-Regular.ttf",
+  "titleColor": "#ff7a6b",
+  "titleStroke": 4,
+  "accent": "#ffcf6b",
+  "colors": [
+   "#d9586f",
+   "#3a1760"
+  ],
+  "clipStart": 4,
+  "clipDuration": 6
+ },
+ {
+  "plugin": "TapeDreams",
+  "title": "Tape Dreams",
+  "tagline": "a warm wobbly cassette deck",
+  "kind": "effect",
+  "font": "Pacifico-Regular.ttf",
+  "titleColor": "#F0894A",
+  "titleStroke": 0,
+  "accent": "#E8743B",
+  "colors": [
+   "#1E4E4F",
+   "#2A1B12"
+  ],
+  "clipStart": 4,
+  "clipDuration": 6
+ },
+ {
+  "plugin": "Orrery",
+  "title": "Orrery",
+  "tagline": "planets that play polyrhythms",
+  "kind": "instrument",
+  "font": "CinzelDecorative-Bold.ttf",
+  "titleColor": "#F6DFA6",
+  "titleStroke": 0,
+  "accent": "#8A6BFF",
+  "colors": [
+   "#060B20",
+   "#1A0E3A"
+  ],
+  "clipStart": 4,
+  "clipDuration": 6
+ },
+ {
+  "plugin": "Dandelion",
+  "title": "Dandelion",
+  "tagline": "every grain is a seed",
+  "kind": "instrument",
+  "font": "Sniglet-ExtraBold.ttf",
+  "titleColor": "#FFD25E",
+  "titleStroke": 3,
+  "accent": "#FFC24D",
+  "colors": [
+   "#0A0F2C",
+   "#5B2A4E"
+  ],
+  "clipStart": 2,
+  "clipDuration": 6
+ },
+ {
+  "plugin": "CrystalCave",
+  "title": "Crystal Cave",
+  "tagline": "shimmer reverb that freezes time",
+  "kind": "effect",
+  "font": "CinzelDecorative-Bold.ttf",
+  "titleColor": "#DCEBFF",
+  "titleStroke": 0,
+  "accent": "#8AB6FF",
+  "colors": [
+   "#2A1B5E",
+   "#080C2A"
+  ],
+  "clipStart": 4,
+  "clipDuration": 6
+ },
+ {
+  "plugin": "CritterKit",
+  "title": "Critter Kit",
+  "tagline": "a drum machine full of critters",
+  "kind": "instrument",
+  "font": "LuckiestGuy-Regular.ttf",
+  "titleColor": "#FFC23D",
+  "titleStroke": 4,
+  "accent": "#FFD15C",
+  "colors": [
+   "#5B3FA6",
+   "#C9558F"
+  ],
+  "clipStart": 2,
+  "clipDuration": 6
+ }
+]

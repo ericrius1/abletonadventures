@@ -5,6 +5,9 @@ each with its own hand-drawn personality. VST3 for macOS + Windows, Audio Units 
 
 ![The Adventure Pack](docs/screenshots/montage.png)
 
+🎬 **[Watch the 1-minute tour](docs/media/adventure-pack-showcase.mp4)**: every plugin's real UI and real audio, cut together as one song.
+It's also attached to each [release](https://github.com/ericrius1/abletonadventures/releases/latest).
+
 ## ⬇️ Install (2 minutes)
 
 **macOS**: open Terminal, paste this and press Enter:
@@ -31,7 +34,7 @@ unzip it, double-click **Install Adventure Pack.bat** and allow admin access.
 |---|---|
 | ![Stardust](docs/screenshots/Stardust.png) | **✨ Stardust**: a cosmic supersaw pad synth. Two morphing oscillators with up-to-7-voice unison, sub + noise, a state-variable filter, LFO, analog *Drift*, and *Twinkle*, which sprinkles sparkling harmonic glints (you can watch them twinkle as stars). Lush chorus and a huge space reverb built in. |
 | ![Critter Kit](docs/screenshots/CritterKit.png) | **🐸 Critter Kit**: eight synthesized drum critters (kick, snare, clap, hats, tom, clink, zap) on C1–G1, the bottom of a Drum Rack / Push grid. A 16-step sequencer locked to Live's transport, swing, drive and room. **Drag any audio file onto a critter and it eats it**: that pad becomes a sampler. |
-| ![Orrery](docs/screenshots/Orrery.png) | **🪐 Orrery**: a polyrhythmic planet sequencer. Six planets orbit a sun, each with its own beats/pulses (3 against 4, 5 against 7...), notes in a scale, and probability. It plays a celestial bell voice *and* outputs MIDI to drive your other instruments. Hold a chord and the planets sing your chord. |
+| ![Orrery](docs/screenshots/Orrery.png) | **🪐 Orrery**: a polyrhythmic planet sequencer. Six planets orbit a sun, each with its own beats/pulses (3 against 4, 5 against 7...), notes in a scale, and probability. It plays a celestial bell voice *and* outputs MIDI to drive your other instruments. Hold a chord and the planets sing your chord. It follows Live's transport (turn on *Free Run* to keep it spinning while stopped). |
 | ![Babble](docs/screenshots/Babble.png) | **🗣️ Babble**: a singing formant synth with a cartoon face. Morph between vowels A-E-I-O-U across bass/tenor/alto/soprano/child/robot voices, add vibrato, breath and a choir, then turn up *Babble* and it sings gibberish. The face mouths every vowel. |
 | ![Dandelion](docs/screenshots/Dandelion.png) | **🌼 Dandelion**: a granular seed sampler. Drop any sound on it, or use the four built-in sources, and play it as drifting clouds of grains: position, spray, size, density, drift, wind gusts, octave "seeds", reverse grains. Every grain floats off the dandelion as a seed. |
 

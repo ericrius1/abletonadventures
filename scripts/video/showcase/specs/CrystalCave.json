@@ -1,0 +1,24 @@
+{
+  "plugin": "CrystalCave",
+  "preset": "Angel Shimmer",
+  "params": [
+    "Shimmer=20%",
+    "Sparkle=30%",
+    "Decay=5.00 s",
+    "Mix=40%",
+    "Output=-3.0 dB"
+  ],
+  "automations": [
+    "Shimmer=20%:85%@4.0:7.9",
+    "Sparkle=30%:75%@4.0:7.9",
+    "Decay=5.00 s:14.0 s@4.0:7.9",
+    "Freeze=Off:On@8.0:8.0",
+    "Mix=40%:100%@7.9:8.1"
+  ],
+  "inputFile": "../inputs/kd_loud.flac",
+  "builtinMidi": "none",
+  "width": 1320,
+  "recordSeconds": 11,
+  "clipStart": 4.0,
+  "clipDuration": 6.0
+}

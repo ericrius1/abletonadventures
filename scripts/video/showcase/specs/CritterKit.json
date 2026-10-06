@@ -1,0 +1,27 @@
+{
+  "plugin": "CritterKit",
+  "preset": "Critter Party",
+  "params": [
+    "Sequencer=On",
+    "Volume=-3.0 dB",
+    "Clap Pan=30L",
+    "Closed Hat Pan=40R",
+    "Open Hat Pan=35R",
+    "Tom Pan=45L",
+    "Cowbell Pan=50R",
+    "Zap Pan=40L"
+  ],
+  "automations": [
+    "Kick Tune=0 st:+2.7 st@4.0:5.0",
+    "Kick Decay=480 ms:1.10 s@4.0:5.0",
+    "Kick Tone=50%:80%@4.0:5.0",
+    "Kick Snap=50%:75%@4.0:5.0",
+    "Drive=20%:45%@4.0:5.0"
+  ],
+  "builtinInput": "silence",
+  "builtinMidi": "none",
+  "width": 1320,
+  "recordSeconds": 9,
+  "clipStart": 2.0,
+  "clipDuration": 6.0
+}

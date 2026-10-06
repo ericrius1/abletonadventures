@@ -1,0 +1,22 @@
+{
+  "plugin": "Stardust",
+  "preset": "Stardust Pad",
+  "params": [
+    "Cutoff=450 Hz",
+    "Twinkle=5%",
+    "Amp Attack=150 ms",
+    "Space Mix=36%",
+    "Volume=+1.5 dB"
+  ],
+  "automations": [
+    "Cutoff=450 Hz:5.00 kHz@4.0:8.0",
+    "Twinkle=5%:90%@4.0:8.0"
+  ],
+  "midiFile": "../inputs/chords_melody.mid",
+  "builtinInput": "silence",
+  "builtinMidi": "none",
+  "width": 1320,
+  "recordSeconds": 11,
+  "clipStart": 4.0,
+  "clipDuration": 6.0
+}

@@ -1,0 +1,31 @@
+{
+  "plugin": "Gremlin",
+  "preset": "Locked Loop Gremlin",
+  "params": [
+    "Grid=1/8",
+    "Lock=2 Bars",
+    "Seed=336",
+    "Chaos=30%",
+    "Mix=100%",
+    "Stutter Odds=75%",
+    "Reverse Odds=60%",
+    "Tape Stop Odds=15%",
+    "Half Speed Odds=40%",
+    "Crush Odds=20%",
+    "Gate Odds=45%",
+    "Scatter Odds=45%",
+    "Slice=Dice",
+    "Crush Depth=55%",
+    "Smooth=4.0 ms"
+  ],
+  "automations": [
+    "Chaos=30%:80%@4:8",
+    "Force Tape Stop=Off:On@9.15:9.15"
+  ],
+  "inputFile": "/home/user/video/feeds/groove.wav",
+  "builtinMidi": "none",
+  "width": 1320,
+  "recordSeconds": 11,
+  "clipStart": 4.0,
+  "clipDuration": 6.0
+}

@@ -1,0 +1,23 @@
+{
+  "plugin": "Babble",
+  "preset": "Hello Choir",
+  "params": [
+    "Babble=0%",
+    "Babble Sync=On",
+    "Babble Division=1/8",
+    "Volume=+5.0 dB"
+  ],
+  "automations": [
+    "Vowel=A:O@4.2:5.8",
+    "Babble=0%:60%@6.0:6.75",
+    "Voice=Robot:Robot@8.0:8.0",
+    "Brightness=55%:32%@8.0:8.0"
+  ],
+  "midiFile": "../inputs/melody.mid",
+  "builtinInput": "silence",
+  "builtinMidi": "none",
+  "width": 1320,
+  "recordSeconds": 11,
+  "clipStart": 4.0,
+  "clipDuration": 6.0
+}

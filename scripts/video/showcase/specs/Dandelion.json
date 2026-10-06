@@ -1,0 +1,33 @@
+{
+  "plugin": "Dandelion",
+  "preset": "Music Box Dreams",
+  "params": [
+    "Position=48%",
+    "Spray=2%",
+    "Drift=72%",
+    "Grain Size=150 ms",
+    "Density=18 /s",
+    "Seeds=10%",
+    "Wind=0%",
+    "Grain Shape=50%",
+    "Shimmer=5%",
+    "Cutoff=5.00 kHz",
+    "Reverb=45%",
+    "Attack=20 ms",
+    "Release=600 ms",
+    "Volume=+2.5 dB"
+  ],
+  "automations": [
+    "Wind=0%:100%@4.0:6.0",
+    "Seeds=10%:55%@4.0:6.0",
+    "Spray=2%:45%@4.0:6.5",
+    "Density=18 /s:30 /s@4.0:6.0"
+  ],
+  "midiFile": "../inputs/arp_fcg.mid",
+  "builtinInput": "silence",
+  "builtinMidi": "none",
+  "width": 1320,
+  "recordSeconds": 9,
+  "clipStart": 2.0,
+  "clipDuration": 6.0
+}

@@ -1,0 +1,130 @@
+{
+ "Gremlin": {
+  "targetLufs": -15.0
+ },
+ "Babble": {
+  "targetLufs": -15.0,
+  "thumbAt": 8.6
+ },
+ "Orrery": {
+  "targetLufs": -15.0,
+  "balanceDb": 2.3,
+  "envelope": [
+   [
+    0,
+    2.5
+   ],
+   [
+    2.4,
+    1.5
+   ],
+   [
+    4.4,
+    0
+   ],
+   [
+    6.4,
+    0
+   ]
+  ],
+  "thumbAt": 9.0
+ },
+ "Boing": {
+  "targetLufs": -17.0,
+  "balanceDb": 1.0,
+  "accent": "#8FD3FF"
+ },
+ "Stardust": {
+  "targetLufs": -15.0,
+  "tagline": "a cosmic supersaw synth that twinkles",
+  "thumbAt": 8.0
+ },
+ "TapeDreams": {
+  "targetLufs": -15.0,
+  "clipStart": 3.613,
+  "accent": "#2FA39A",
+  "colors": [
+   "#1E4E4F",
+   "#0F1A24"
+  ],
+  "tagline": "a warm, wobbly cassette deck",
+  "thumbAt": 8.0
+ },
+ "Dandelion": {
+  "targetLufs": -15.5,
+  "balanceDb": -1.0,
+  "accent": "#C2577F",
+  "tagline": "a granular sampler that scatters seeds",
+  "thumbAt": 6.0
+ },
+ "CritterKit": {
+  "targetLufs": -14.5,
+  "accent": "#FF8FC8",
+  "tagline": "a drum machine played by tiny critters"
+ },
+ "CrystalCave": {
+  "targetLufs": -14.5,
+  "titleSize": 68,
+  "envelope": [
+   [
+    0,
+    -1.0
+   ],
+   [
+    4.4,
+    1.5
+   ],
+   [
+    6.4,
+    2.0
+   ]
+  ],
+  "thumbAt": 7.6
+ },
+ "_order": [
+  "Gremlin",
+  "Babble",
+  "Orrery",
+  "Boing",
+  "Stardust",
+  "TapeDreams",
+  "Dandelion",
+  "CritterKit",
+  "CrystalCave"
+ ],
+ "_intro": {
+  "targetLufs": -15.0,
+  "subtitle": "9 free, whimsical plugins for Ableton Live"
+ },
+ "_outro": {
+  "targetLufs": -15.0,
+  "pieces": [
+   [
+    7.6,
+    10.0
+   ],
+   [
+    0.0,
+    2.0
+   ]
+  ],
+  "fadeOut": 2.0,
+  "pictureFadeOut": 1.0,
+  "detail": "VST3 + AU  ·  macOS · Windows · Linux  ·  made for Ableton Live"
+ },
+ "_transitions": {
+  "1": "fade",
+  "2": "pixelize",
+  "3": "push",
+  "4": "push",
+  "5": "push",
+  "6": "push",
+  "7": "push",
+  "8": "push",
+  "9": "push",
+  "10": "flash"
+ },
+ "_audioCurves": {
+  "1": "linear"
+ }
+}

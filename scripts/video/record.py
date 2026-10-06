@@ -8,8 +8,8 @@ Spec fields:
   preset        factory preset name to load first        (optional)
   params        ["Param Name=value text", ...]          (optional)
   automations   ["Param Name=from:to@t0:t1", ...]       (optional, seconds from audio start)
-  midiFile      path to a .mid file                      (optional)
-  inputFile     path to a .wav file fed as input         (optional)
+  midiFile      path to a .mid file                      (optional; relative paths are relative to the spec)
+  inputFile     path to an audio file fed as input       (optional; relative paths are relative to the spec)
   builtinInput  harness --input name (drums|pluck|...)   (optional)
   builtinMidi   harness --midi name (none|chords|...)    (optional)
   width         editor width in pixels (default 1320)
@@ -88,10 +88,14 @@ def main():
         cmd += ["--param", p]
     for a in spec.get("automations", []):
         cmd += ["--automate", a]
+    def resolve(path):  # relative paths are relative to the spec file
+        p = Path(path)
+        return str(p if p.is_absolute() else (spec_path.parent / p).resolve())
+
     if spec.get("midiFile"):
-        cmd += ["--midi-file", spec["midiFile"]]
+        cmd += ["--midi-file", resolve(spec["midiFile"])]
     if spec.get("inputFile"):
-        cmd += ["--input-file", spec["inputFile"]]
+        cmd += ["--input-file", resolve(spec["inputFile"])]
     cmd += ["--input", spec.get("builtinInput", "auto"), "--midi", spec.get("builtinMidi", "auto")]
 
     display = spec.get("display") or display_for(plugin)
