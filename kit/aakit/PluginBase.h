@@ -99,6 +99,7 @@ namespace params
     enum class Unit { none, percent, hz, ms, seconds, db, semitones, cents, ratio, beats };
 
     juce::String formatValue (float value, Unit unit);
+    float parseValue (const juce::String& text, Unit unit);
 
     /** Linear-range float with a unit-aware string conversion. */
     std::unique_ptr<juce::AudioParameterFloat> floatParam (const juce::String& id, const juce::String& name,

@@ -377,8 +377,8 @@ public:
     {
         sr = sampleRate;
         env = 0.0f;
-        attack = aa::dsp::onePoleCoeff (0.004f, sr);
-        release = aa::dsp::onePoleCoeff (0.16f, sr);
+        attack = aa::dsp::onePoleCoeff (0.002f, sr);
+        release = aa::dsp::onePoleCoeff (0.14f, sr);
         setAmount (0.0f);
     }
 
@@ -390,7 +390,7 @@ public:
         threshold = -8.0f - 22.0f * amount;
         ratio = 1.0f + 3.0f * amount;
         slope = 1.0f / ratio - 1.0f;
-        makeup = -0.85f * gainReductionDb (-14.0f);
+        makeup = -gainReductionDb (-12.0f);
     }
 
     /** Returns the gain to apply for this detector sample. */
@@ -440,7 +440,7 @@ struct Saturator
     {
         std::array<float, 65> t {};
         constexpr int n = 512;
-        const float amp = 0.3f;
+        const float amp = 0.25f;
         for (size_t k = 0; k < t.size(); ++k)
         {
             const float drive = (float) k / (float) (t.size() - 1);

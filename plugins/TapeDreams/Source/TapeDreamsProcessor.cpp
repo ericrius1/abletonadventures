@@ -80,7 +80,7 @@ TapeDreamsProcessor::TapeDreamsProcessor()
                             { "hum", 12.0f }, { "mains", 1.0f } } },
         { "Broken Walkman", { { "drive", 58.0f }, { "squash", 42.0f }, { "wow", 82.0f }, { "flutter", 72.0f },
                               { "crinkle", 48.0f }, { "age", 64.0f }, { "wear", 55.0f }, { "hiss", 42.0f },
-                              { "output", 3.0f } } },
+                              { "output", 1.5f } } },
         { "Sun-Bleached Summer", { { "drive", 30.0f }, { "squash", 18.0f }, { "wow", 55.0f }, { "flutter", 18.0f },
                                    { "crinkle", 14.0f }, { "age", 52.0f }, { "wear", 18.0f }, { "hiss", 28.0f },
                                    { "mix", 88.0f } } },
@@ -92,7 +92,7 @@ TapeDreamsProcessor::TapeDreamsProcessor()
                              { "crinkle", 0.0f }, { "age", 0.0f }, { "wear", 0.0f }, { "hiss", 0.0f } } },
         { "Answering Machine", { { "drive", 78.0f }, { "squash", 72.0f }, { "wow", 35.0f }, { "flutter", 55.0f },
                                  { "crinkle", 20.0f }, { "age", 100.0f }, { "wear", 38.0f }, { "hiss", 55.0f },
-                                 { "hum", 32.0f }, { "mains", 1.0f }, { "output", 2.0f } } },
+                                 { "hum", 32.0f }, { "mains", 1.0f }, { "output", 0.5f } } },
         { "Grandpa's Attic", { { "drive", 42.0f }, { "squash", 30.0f }, { "wow", 52.0f }, { "flutter", 42.0f },
                                { "crinkle", 36.0f }, { "age", 76.0f }, { "wear", 62.0f }, { "hiss", 50.0f },
                                { "hum", 24.0f }, { "stopTime", 1.6f } } },
@@ -204,6 +204,7 @@ void TapeDreamsProcessor::resetState()
     filterCountdown = 0;
     lastAge = -1.0f;
     lastMotorForFilter = -1.0f;
+    ageMakeup = 1.0f;
 }
 
 //==============================================================================
@@ -276,17 +277,29 @@ void TapeDreamsProcessor::processChunk (float* const* io, int numCh, int n)
         const int k = jmin ((int) compTable.size() - 2, (int) pos);
         driveComp[(size_t) i] = compTable[(size_t) k] + (compTable[(size_t) k + 1] - compTable[(size_t) k]) * (pos - (float) k);
 
-        const float meterGain = std::sqrt (g); // the IN meter shows the record level (input + half the drive)
-        float ms = 0.0f, pk = 0.0f;
+        // Squash: program-dependent tape compression ahead of the saturator, so anything that
+        // leaks past its attack gets rounded off by the tape rather than overshooting.
+        if ((i & 15) == 0)
+            squashComp.setAmount (squashSm.current);
+        squashSm.next();
+        float x[2] = { 0.0f, 0.0f };
+        float pk = 0.0f;
         for (int c = 0; c < numCh; ++c)
         {
-            const float x = io[c][i] * gIn;
-            work.getWritePointer (c)[i] = chans[(size_t) c].preEmph.process (x);
-            ms += x * x;
-            pk = jmax (pk, std::abs (x));
+            x[c] = io[c][i] * gIn;
+            pk = jmax (pk, std::abs (x[c]));
+        }
+        const float sqGain = squashComp.process (pk);
+
+        const float meterGain = std::sqrt (g); // the IN meter shows the record level (input + half the drive)
+        float ms = 0.0f;
+        for (int c = 0; c < numCh; ++c)
+        {
+            ms += x[c] * x[c];
+            work.getWritePointer (c)[i] = chans[(size_t) c].preEmph.process (x[c] * sqGain);
         }
         inMs += meterCoeff * (ms * meterGain * meterGain / (float) numCh - inMs);
-        const float hit = aa::dsp::clamp01 ((pk * g - 0.55f) / 1.3f);
+        const float hit = aa::dsp::clamp01 ((pk * sqGain * g - 0.55f) / 1.3f);
         glow = jmax (hit, glow * glowRelease);
     }
 
@@ -308,14 +321,7 @@ void TapeDreamsProcessor::processChunk (float* const* io, int numCh, int n)
     }
 
     // ---- 3. transport, ageing, noise, mix (base rate)
-    bool stopOn = tapeStop->load() > 0.5f;
-    if (std::getenv ("TAPEDREAMS_STOP_TEST") != nullptr) // TEMP-TEST
-    {
-        static int64 testPos = 0;
-        const double tsec = (double) testPos / sr;
-        stopOn = (tsec > 2.0 && tsec < 4.0) || (tsec > 5.5 && tsec < 5.9);
-        testPos += n;
-    }
+    const bool stopOn = tapeStop->load() > 0.5f;
     const float downTime = stopTime->load();
     const float downInc = 1.0f / (jmax (0.05f, downTime) * sr);
     const float upInc = 1.0f / (jmax (0.15f, downTime * 0.5f) * sr);
@@ -339,7 +345,8 @@ void TapeDreamsProcessor::processChunk (float* const* io, int numCh, int n)
             {
                 lastAge = a;
                 const float lpHz = jmin (21000.0f * std::pow (3000.0f / 21000.0f, std::pow (a, 0.85f)), sr * 0.45f);
-                const float hpHz = 16.0f * std::pow (240.0f / 16.0f, std::pow (a, 1.4f));
+                const float hpHz = 16.0f * std::pow (200.0f / 16.0f, std::pow (a, 1.4f));
+                ageMakeup = aa::dsp::dbToGain (4.0f * a * std::sqrt (a)); // band-limiting loses energy: make some back
                 for (auto& c : chans)
                 {
                     c.ageLow.setCutoffQ (lpHz, 0.72f, sr);
@@ -353,13 +360,11 @@ void TapeDreamsProcessor::processChunk (float* const* io, int numCh, int n)
                 for (auto& c : chans)
                     c.stopLow.setCutoffQ (140.0f + 17000.0f * motor * motor, 0.6f, sr);
             }
-            squashComp.setAmount (squashSm.current);
         }
 
-        const float comp = driveComp[(size_t) i];
+        const float comp = driveComp[(size_t) i] * ageMakeup;
         const float ageAmt = ageSm.next();
         const float wearAmt = wearSm.next();
-        squashSm.next();
 
         // -- tape colour after the saturator: de-emphasis, head bump, DC block
         float sat[2] = { 0.0f, 0.0f };
@@ -374,11 +379,9 @@ void TapeDreamsProcessor::processChunk (float* const* io, int numCh, int n)
         if (numCh == 1)
             sat[1] = sat[0];
 
-        // -- squash (stereo linked)
-        const float sqGain = squashComp.process (jmax (std::abs (sat[0]), std::abs (sat[1])));
         for (int c = 0; c < numCh; ++c)
         {
-            chans[(size_t) c].wetLine.push (sat[c] * sqGain);
+            chans[(size_t) c].wetLine.push (sat[c]);
             chans[(size_t) c].dryLine.push (io[c][i]);
         }
 

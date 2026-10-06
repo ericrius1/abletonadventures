@@ -478,6 +478,8 @@ void CassetteView::setTrackName (const String& name)
 {
     if (name != trackName)
     {
+        if (trackName.isNotEmpty())
+            clunkVel = 120.0f; // clunk!
         trackName = name;
         over = {};
         repaint();
@@ -513,6 +515,35 @@ AffineTransform CassetteView::designTransform() const
     return AffineTransform::scale (s).translated (margin, margin * 0.7f);
 }
 
+static void drawHeart (Graphics& g, Point<float> c, float size, float angle, Colour colour)
+{
+    Path p;
+    p.startNewSubPath (0.0f, 0.35f);
+    p.cubicTo (-0.1f, 0.2f, -0.55f, 0.0f, -0.5f, -0.3f);
+    p.cubicTo (-0.45f, -0.6f, -0.05f, -0.6f, 0.0f, -0.25f);
+    p.cubicTo (0.05f, -0.6f, 0.45f, -0.6f, 0.5f, -0.3f);
+    p.cubicTo (0.55f, 0.0f, 0.1f, 0.2f, 0.0f, 0.35f);
+    p.closeSubPath();
+    p.applyTransform (AffineTransform::scale (size).rotated (angle).translated (c.x, c.y));
+    g.setColour (colour.withAlpha (0.25f));
+    g.fillPath (p);
+    g.setColour (colour);
+    g.strokePath (p, PathStrokeType (1.5f, PathStrokeType::curved, PathStrokeType::rounded));
+}
+
+static void drawSparkle (Graphics& g, Point<float> c, float size, Colour colour)
+{
+    Path p;
+    p.startNewSubPath (c.x, c.y - size);
+    p.quadraticTo (c.x, c.y, c.x + size, c.y);
+    p.quadraticTo (c.x, c.y, c.x, c.y + size);
+    p.quadraticTo (c.x, c.y, c.x - size, c.y);
+    p.quadraticTo (c.x, c.y, c.x, c.y - size);
+    p.closeSubPath();
+    g.setColour (colour);
+    g.fillPath (p);
+}
+
 float CassetteView::packRadius (bool left) const
 {
     const float rMin = 24.0f, rMax = 63.0f;
@@ -526,7 +557,7 @@ void CassetteView::tick (double dt, float speed, float motor)
     const float t = (float) dt;
 
     // Exaggerate the wobble so it reads visually; motor brings everything to a halt.
-    const float target = jmax (0.0f, motor * (1.0f + (speed - motor) * 9.0f));
+    const float target = jlimit (0.0f, 2.5f, motor * (1.0f + (speed - motor) * 16.0f));
     visualSpeed += (target - visualSpeed) * jmin (1.0f, t * 12.0f);
 
     const float tapeV = 70.0f * visualSpeed; // design units per second at the pack surface
@@ -539,6 +570,19 @@ void CassetteView::tick (double dt, float speed, float motor)
     progress += direction * visualSpeed * t / 240.0f;
     if (progress > 1.0f) { progress = 1.0f; direction = -1.0f; }
     if (progress < 0.0f) { progress = 0.0f; direction = 1.0f; }
+
+    // damped spring for the insert "clunk"
+    {
+        const int steps = jmax (1, (int) std::ceil (t / 0.004f));
+        const float h = t / (float) steps;
+        for (int i = 0; i < steps; ++i)
+        {
+            clunkVel += (-900.0f * clunk - 18.0f * clunkVel) * h;
+            clunk += clunkVel * h;
+        }
+    }
+    if (std::abs (clunk) < 0.01f && std::abs (clunkVel) < 0.05f)
+        clunk = clunkVel = 0.0f;
 
     for (auto& m : motes)
     {
@@ -743,8 +787,11 @@ void CassetteView::drawShell (Graphics& g)
         g.drawHorizontalLine (64, label.getX() + 14.0f, label.getRight() - 14.0f);
         g.drawHorizontalLine (163, label.getX() + 14.0f, label.getRight() - 14.0f);
 
-        // handwritten title
+        // handwritten title, with doodles
         drawTextCentred (g, "Tape Dreams", aa::Fonts::accent (31.0f), { 200.0f, 41.0f }, -0.025f, palette::ink);
+        drawHeart (g, { 286.0f, 29.0f }, 14.0f, 0.3f, palette::orange);
+        drawSparkle (g, { 116.0f, 31.0f }, 6.0f, palette::mustard);
+        drawSparkle (g, { 124.0f, 48.0f }, 3.5f, palette::teal);
         // handwritten track list: the preset name
         const String track = trackName.isEmpty() ? String ("Side A") : trackName;
         drawTextCentred (g, "~ " + track + " ~", aa::Fonts::accent (14.5f), { 200.0f, 155.0f }, 0.012f, palette::tealDark);
@@ -846,6 +893,9 @@ void CassetteView::paint (Graphics& g)
     const float physScale = jlimit (1.0f, 4.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
     if (under.isNull() || over.isNull() || std::abs (physScale - layerScale) > 0.01f)
         rebuild (physScale);
+
+    if (clunk != 0.0f)
+        g.addTransform (AffineTransform::translation (0.0f, jlimit (-4.0f, 6.0f, clunk)));
 
     const auto b = getLocalBounds().toFloat();
     g.drawImage (under, b);

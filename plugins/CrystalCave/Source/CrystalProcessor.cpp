@@ -6,21 +6,7 @@ namespace P = aa::params;
 
 namespace
 {
-    /** Like aa::params::floatParam, but the text parser understands "kHz", "ms" and "s" suffixes so that
-        values such as "11.0 kHz" or "300 ms" round-trip correctly. */
-    float parseValue (const String& text, P::Unit unit)
-    {
-        const auto t = text.trim().toLowerCase();
-        float v = t.retainCharacters ("0123456789.-").getFloatValue();
-        if (unit == P::Unit::hz && t.containsChar ('k'))
-            v *= 1000.0f;
-        else if (unit == P::Unit::seconds && t.endsWith ("ms"))
-            v *= 0.001f;
-        else if (unit == P::Unit::ms && t.endsWith ("s") && ! t.endsWith ("ms"))
-            v *= 1000.0f;
-        return v;
-    }
-
+    /** aa::params::floatParam with an optional skew; text parsing (kHz / ms / s) comes from the kit. */
     std::unique_ptr<AudioParameterFloat> unitParam (const String& id, const String& name, float min, float max,
                                                     float def, P::Unit unit, float skewCentre = -1.0f)
     {
@@ -32,7 +18,7 @@ namespace
             ParameterID { id, 1 }, name, range, def,
             AudioParameterFloatAttributes()
                 .withStringFromValueFunction ([unit] (float v, int) { return P::formatValue (v, unit); })
-                .withValueFromStringFunction ([unit] (const String& s) { return parseValue (s, unit); }));
+                .withValueFromStringFunction ([unit] (const String& s) { return P::parseValue (s, unit); }));
     }
 } // namespace
 

@@ -255,9 +255,17 @@ public:
     float read (float delay) const
     {
         delay = juce::jlimit (1.0f, (float) (mask - 3), delay);
-        const float readPos = (float) writePos - delay;
-        const int i = (int) std::floor (readPos);
-        const float f = readPos - (float) i;
+        // Keep the integer and fractional parts apart: (float) writePos - delay loses sub-sample
+        // precision once the buffer is large (2^18+ samples), which adds noise to modulated reads.
+        const int whole = (int) delay;
+        const float frac = delay - (float) whole;
+        int i = writePos - whole;
+        float f = 0.0f;
+        if (frac > 0.0f)
+        {
+            --i;
+            f = 1.0f - frac;
+        }
 
         const float xm1 = buffer[(size_t) ((i - 1) & mask)];
         const float x0 = buffer[(size_t) (i & mask)];

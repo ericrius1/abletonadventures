@@ -22,7 +22,7 @@ private:
     struct Sparkle
     {
         juce::Point<float> pos, vel;
-        float age = 0.0f, life = 2.0f, size = 2.0f, twinkle = 3.0f, hue = 0.0f, swayPhase = 0.0f;
+        float age = 0.0f, life = 2.0f, size = 2.0f, twinkle = 3.0f, hue = 0.0f, swayPhase = 0.0f, spin = 0.0f;
     };
     struct Glint { juce::Point<float> pos; float age = 0.0f, life = 0.6f, size = 6.0f, rot = 0.0f; float hue = 0.0f; };
     struct TailDot { float age = 0.0f, amp = 1.0f; };
@@ -50,7 +50,8 @@ private:
 
     void spawnSparkle (bool fromMouth);
     void spawnGlint (float strength);
-    void drawSpriteGlint (juce::Graphics& g, juce::Point<float> centre, float size, juce::Colour colour, float rotation) const;
+    /** hue 0..1 = ice..violet, < 0 = frost white. Uses pre-tinted sprites (fast image blits). */
+    void drawSpriteGlint (juce::Graphics& g, juce::Point<float> centre, float size, float hue, float alpha, float rotation) const;
 
     CrystalProcessor& processor;
     std::vector<cave::Crystal> crystals;
@@ -59,7 +60,8 @@ private:
     std::vector<Glint> glints;
     std::vector<TailDot> dots;
 
-    juce::Image background, glowLayer, frostLayer, curveLayer, lightLayer, haloSprite, starSprite;
+    juce::Image background, glowLayer, frostLayer, curveLayer, lightIce, lightFrost;
+    std::array<juce::Image, 7> glintSprites; // 6 hues from ice to violet + frost white
     juce::Rectangle<float> lightRect;
     std::array<juce::Rectangle<int>, 3> glowRegions;
     float imageScale = 0.0f;
@@ -71,7 +73,7 @@ private:
     juce::Point<float> mouthLight;
 
     float glow = 0.0f, flash = 0.0f, freezeVis = 0.0f, breathPhase = 0.0f, shimmerAmt = 0.0f;
-    float spawnAccumulator = 0.0f, glintAccumulator = 0.0f;
+    float spawnAccumulator = 0.0f, glintAccumulator = 0.0f, repaintClock = 0.0f;
     double clock = 0.0;
     bool hover = false;
     juce::Random random { 7 };

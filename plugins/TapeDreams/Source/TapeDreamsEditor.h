@@ -17,6 +17,8 @@ private:
 
     void rebuildBackground (float scale);
     void paintTitle (juce::Graphics&);
+    void paintPanelIcons (juce::Graphics&);
+    juce::Rectangle<float> iconArea (size_t panel, float width) const;
     void setMomentaryStop (bool held);
 
     TapeDreamsProcessor& proc;
@@ -36,7 +38,7 @@ private:
     juce::Rectangle<float> titleArea, deckArea, cassetteWell;
 
     float titleClock = 0.0f, sag = 0.0f, wobble = 0.0f;
-    float blinkClock = 0.0f;
+    float blinkClock = 0.0f, iconClock = 0.0f, levelDot = 0.0f;
     bool holdActive = false, holdPrevious = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TapeDreamsEditor)

@@ -197,7 +197,7 @@ void TapeDreamsEditor::layoutContent()
         float kx = area.getX();
         for (auto* k : knobs)
         {
-            k->setBounds (Rectangle<float> (kx, area.getY(), slot, area.getHeight()).withSizeKeepingCentre (72.0f, 112.0f).toNearestInt());
+            k->setBounds (Rectangle<float> (kx, area.getY(), slot, area.getHeight()).withSizeKeepingCentre (72.0f, 94.0f).toNearestInt());
             kx += slot;
         }
     };
@@ -355,6 +355,92 @@ void TapeDreamsEditor::paintContent (Graphics& g)
 
     g.drawImage (background, baseBounds().toFloat());
     paintTitle (g);
+    paintPanelIcons (g);
+}
+
+Rectangle<float> TapeDreamsEditor::iconArea (size_t panel, float width) const
+{
+    const auto& p = panels[panel];
+    return { p.getRight() - 14.0f - width, p.getY() + 8.0f, width, 18.0f };
+}
+
+void TapeDreamsEditor::paintPanelIcons (Graphics& g)
+{
+    // Tape: the saturation transfer curve, with a dot riding the input level.
+    {
+        auto r = iconArea (0, 34.0f);
+        if (g.clipRegionIntersects (r.toNearestInt()))
+        {
+            const float d = drive.getProportion();
+            const float gain = tape::Saturator::driveGain (d), b = tape::Saturator::bias (d);
+            const float off = aa::dsp::softClip (b), norm = 1.0f / jmax (0.2f, tape::Saturator::shape (1.0f, gain, b, off));
+            auto curveAt = [&] (float x)
+            {
+                return Point<float> (r.getCentreX() + x * r.getWidth() * 0.5f,
+                                     r.getCentreY() - tape::Saturator::shape (x, gain, b, off) * norm * r.getHeight() * 0.45f);
+            };
+            g.setColour (pal::brown.withAlpha (0.18f));
+            g.drawLine (r.getX(), r.getCentreY(), r.getRight(), r.getCentreY(), 1.0f);
+            g.drawLine (r.getCentreX(), r.getY(), r.getCentreX(), r.getBottom(), 1.0f);
+            Path curve;
+            for (int i = 0; i <= 24; ++i)
+            {
+                const auto pt = curveAt (-1.0f + 2.0f * (float) i / 24.0f);
+                if (i == 0) curve.startNewSubPath (pt); else curve.lineTo (pt);
+            }
+            g.setColour (pal::orange);
+            g.strokePath (curve, PathStrokeType (1.8f, PathStrokeType::curved, PathStrokeType::rounded));
+            const auto dot = curveAt (jlimit (0.0f, 1.0f, levelDot));
+            g.setColour (pal::orange.withAlpha (0.3f));
+            g.fillEllipse (Rectangle<float> (9.0f, 9.0f).withCentre (dot));
+            g.setColour (pal::brown);
+            g.fillEllipse (Rectangle<float> (4.5f, 4.5f).withCentre (dot));
+        }
+    }
+
+    // Wobble: a wavy line that follows Wow (slow swell) and Flutter (fast ripple).
+    {
+        auto r = iconArea (1, 62.0f);
+        if (g.clipRegionIntersects (r.toNearestInt()))
+        {
+            const float w = wow.getProportion(), f = flutter.getProportion();
+            Path wave;
+            for (int i = 0; i <= 40; ++i)
+            {
+                const float u = (float) i / 40.0f;
+                const float y = 0.7f * w * std::sin (u * 6.0f - iconClock * 1.6f) + 0.3f * f * std::sin (u * 31.0f - iconClock * 11.0f);
+                const Point<float> pt (r.getX() + u * r.getWidth(), r.getCentreY() - y * r.getHeight() * 0.42f);
+                if (i == 0) wave.startNewSubPath (pt); else wave.lineTo (pt);
+            }
+            g.setColour (pal::teal);
+            g.strokePath (wave, PathStrokeType (1.8f, PathStrokeType::curved, PathStrokeType::rounded));
+        }
+    }
+
+    // Age: the passband closing in.
+    {
+        auto r = iconArea (2, 40.0f);
+        if (g.clipRegionIntersects (r.toNearestInt()))
+        {
+            const float a = age.getProportion();
+            const float lo = 0.04f + 0.3f * std::pow (a, 1.4f), hi = 0.98f - 0.42f * std::pow (a, 0.85f);
+            Path hill;
+            hill.startNewSubPath (r.getX(), r.getBottom());
+            for (int i = 0; i <= 30; ++i)
+            {
+                const float u = (float) i / 30.0f;
+                const float rise = aa::dsp::clamp01 ((u - lo) / 0.12f + 0.5f), fall = aa::dsp::clamp01 ((hi - u) / 0.12f + 0.5f);
+                const float h = std::sin (rise * MathConstants<float>::halfPi) * std::sin (fall * MathConstants<float>::halfPi);
+                hill.lineTo (r.getX() + u * r.getWidth(), r.getBottom() - h * r.getHeight() * 0.85f);
+            }
+            hill.lineTo (r.getRight(), r.getBottom());
+            hill.closeSubPath();
+            g.setColour (pal::mustard.withAlpha (0.35f));
+            g.fillPath (hill);
+            g.setColour (pal::mustard.darker (0.15f));
+            g.strokePath (hill, PathStrokeType (1.4f, PathStrokeType::curved, PathStrokeType::rounded));
+        }
+    }
 }
 
 void TapeDreamsEditor::paintTitle (Graphics& g)
@@ -419,4 +505,11 @@ void TapeDreamsEditor::onFrame (double, double dt)
     wobble += (0.3f + 2.2f * wowAmt - wobble) * jmin (1.0f, t * 3.0f);
     sag += ((1.0f - motor) - sag) * jmin (1.0f, t * 5.0f);
     content.repaint (titleArea.expanded (2.0f, 6.0f).toNearestInt());
+
+    // Panel micro-visualisations
+    iconClock += t;
+    const float lvl = std::sqrt (jmax (0.0f, proc.inputLevel.load())) * 2.5f;
+    levelDot += (lvl - levelDot) * jmin (1.0f, t * 10.0f);
+    for (size_t i : { (size_t) 0, (size_t) 1, (size_t) 2 })
+        content.repaint (iconArea (i, i == 1 ? 62.0f : 40.0f).expanded (6.0f).toNearestInt());
 }

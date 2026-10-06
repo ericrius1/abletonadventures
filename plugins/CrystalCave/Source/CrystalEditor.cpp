@@ -296,6 +296,8 @@ void CaveStage::rebuildImages (float scale)
 
         for (const auto& c : crystals)
             cave::drawCrystal (g, c, 0.6f, 0.0f);
+        for (const auto& c : crystals) // the resting glow, so the glow layer can be skipped in silence
+            cave::drawCrystal (g, c, 1.18f, 1.0f, 0.1f);
 
         // vignette
         g.setGradientFill (ColourGradient (Colours::transparentBlack, W * 0.5f, H * 0.62f,
@@ -303,42 +305,47 @@ void CaveStage::rebuildImages (float scale)
         g.fillRect (b);
     }
 
-    // ---- breathing light (white; tinted when drawn) and particle sprites ---------------------------
+    // ---- breathing light (ice and frost versions, crossfaded) and particle sprites ------------------
     lightRect = Rectangle<float> (mouthLight.x - 260.0f, mouthLight.y - 262.0f, 520.0f, 266.0f).getIntersection (b);
-    lightLayer = Image (Image::ARGB, jmax (1, roundToInt (lightRect.getWidth() * scale)), jmax (1, roundToInt (lightRect.getHeight() * scale)), true);
+    auto makeLight = [&] (Colour colour)
     {
-        Graphics g (lightLayer);
+        Image img (Image::ARGB, jmax (1, roundToInt (lightRect.getWidth() * scale)), jmax (1, roundToInt (lightRect.getHeight() * scale)), true);
+        Graphics g (img);
         g.addTransform (AffineTransform::translation (-lightRect.getX(), -lightRect.getY()).scaled (scale));
-        ColourGradient grad (Colours::white, mouthLight, Colours::white.withAlpha (0.0f), mouthLight.translated (0.0f, -250.0f), true);
-        grad.addColour (0.35, Colours::white.withAlpha (0.45f));
+        ColourGradient grad (colour, mouthLight, colour.withAlpha (0.0f), mouthLight.translated (0.0f, -250.0f), true);
+        grad.addColour (0.35, colour.withAlpha (0.45f));
         g.setGradientFill (grad);
         g.fillRect (lightRect);
-    }
+        return img;
+    };
+    lightIce = makeLight (C::ice);
+    lightFrost = makeLight (C::frost);
 
-    const int spritePx = 64;
-    haloSprite = Image (Image::ARGB, spritePx, spritePx, true);
+    for (size_t i = 0; i < glintSprites.size(); ++i)
     {
-        Graphics g (haloSprite);
-        const Point<float> c ((float) spritePx * 0.5f, (float) spritePx * 0.5f);
-        g.setGradientFill (ColourGradient (Colours::white, c, Colours::white.withAlpha (0.0f), c.translated ((float) spritePx * 0.5f, 0.0f), true));
-        g.fillEllipse (0.0f, 0.0f, (float) spritePx, (float) spritePx);
-    }
-    starSprite = Image (Image::ARGB, spritePx, spritePx, true);
-    {
-        Graphics g (starSprite);
-        const float h = (float) spritePx * 0.5f, w = h * 0.16f;
+        const Colour tint = i == 6 ? C::frost : C::ice.interpolatedWith (C::violet, (float) i / 5.0f).interpolatedWith (C::frost, 0.35f);
+        const int px = 48;
+        Image img (Image::ARGB, px, px, true);
+        Graphics g (img);
+        const float h = (float) px * 0.5f;
+        const Point<float> c (h, h);
+        g.setGradientFill (ColourGradient (tint.withAlpha (0.45f), c, tint.withAlpha (0.0f), c.translated (h, 0.0f), true));
+        g.fillEllipse (0.0f, 0.0f, (float) px, (float) px);
+
+        const float len = h / 1.1f, w = len * 0.16f;
         Path star;
-        star.startNewSubPath (0.0f, -h);
+        star.startNewSubPath (0.0f, -len);
         star.lineTo (w, -w);
-        star.lineTo (h, 0.0f);
+        star.lineTo (len, 0.0f);
         star.lineTo (w, w);
-        star.lineTo (0.0f, h);
+        star.lineTo (0.0f, len);
         star.lineTo (-w, w);
-        star.lineTo (-h, 0.0f);
+        star.lineTo (-len, 0.0f);
         star.lineTo (-w, -w);
         star.closeSubPath();
-        g.setColour (Colours::white);
+        g.setColour (tint.interpolatedWith (Colours::white, 0.6f));
         g.fillPath (star, AffineTransform::translation (h, h));
+        glintSprites[i] = img;
     }
 
     // only the parts of the glow layer that actually contain crystals get blended every frame
@@ -447,17 +454,18 @@ void CaveStage::rebuildImages (float scale)
     }
 }
 
-void CaveStage::drawSpriteGlint (Graphics& g, Point<float> centre, float size, Colour colour, float rotation) const
+void CaveStage::drawSpriteGlint (Graphics& g, Point<float> centre, float size, float hue, float alpha, float rotation) const
 {
-    if (size < 0.3f || haloSprite.isNull())
+    if (size < 0.3f || alpha < 0.01f)
         return;
-    const float sw = (float) haloSprite.getWidth();
-    const float alpha = colour.getFloatAlpha();
-    g.setColour (colour.withMultipliedAlpha (0.45f));
-    g.drawImageTransformed (haloSprite, AffineTransform::translation (-sw * 0.5f, -sw * 0.5f).scaled (size * 2.2f / sw).translated (centre), true);
-    g.setColour (colour.withAlpha (1.0f).interpolatedWith (Colours::white, 0.6f).withAlpha (alpha));
-    g.drawImageTransformed (starSprite, AffineTransform::translation (-sw * 0.5f, -sw * 0.5f).scaled (size * 2.0f / sw)
-                                            .rotated (rotation).translated (centre), true);
+    const auto& sprite = glintSprites[hue < 0.0f ? 6 : (size_t) jlimit (0, 5, roundToInt (hue * 5.0f))];
+    if (sprite.isNull())
+        return;
+    const float sw = (float) sprite.getWidth();
+    g.setOpacity (jmin (1.0f, alpha));
+    g.drawImageTransformed (sprite, AffineTransform::translation (-sw * 0.5f, -sw * 0.5f).scaled (size * 2.2f / sw)
+                                        .rotated (rotation).translated (centre));
+    g.setOpacity (1.0f);
 }
 
 void CaveStage::rebuildCurve (float scale)
@@ -571,6 +579,30 @@ void CaveStage::rebuildCurve (float scale)
     g.setColour (mainColour.interpolatedWith (Colours::white, 0.4f));
     g.strokePath (main, PathStrokeType (1.7f, PathStrokeType::curved, PathStrokeType::rounded));
 
+    // ---- legend (bottom-right of the plot) ------------------------------------------------
+    {
+        const bool showShimmer = shimmer > 0.01f && ! frozen;
+        struct Row { Colour colour; bool dashed; const char* text; };
+        const Row rows[] = { { C::ice.interpolatedWith (Colours::white, 0.4f), false, "TAIL" },
+                             { C::violet, false, "HIGHS" },
+                             { C::lilac, true, "SHIMMER" } };
+        const int numRows = showShimmer ? 3 : 2;
+        float y = plotArea.getBottom() - 10.0f - 11.0f * (float) (numRows - 1);
+        const float x = plotArea.getRight() - 58.0f;
+        g.setFont (aa::Fonts::ui (8.0f).withExtraKerningFactor (0.12f));
+        for (int i = 0; i < numRows; ++i, y += 11.0f)
+        {
+            g.setColour (rows[i].colour);
+            if (rows[i].dashed)
+                for (float dx = 0.0f; dx < 12.0f; dx += 4.0f)
+                    g.fillRect (Rectangle<float> (x + dx, y - 0.6f, 2.0f, 1.3f));
+            else
+                g.fillRect (Rectangle<float> (x, y - 0.7f, 12.0f, 1.5f));
+            g.setColour (C::text.withAlpha (0.5f));
+            g.drawText (rows[i].text, Rectangle<float> (x + 17.0f, y - 6.0f, 50.0f, 12.0f), Justification::centredLeft);
+        }
+    }
+
     // ---- readout ---------------------------------------------------------------------
     const float cx = (float) getWidth() * 0.5f;
     g.setFont (aa::Fonts::uiBold (8.5f).withExtraKerningFactor (0.3f));
@@ -616,6 +648,8 @@ void CaveStage::spawnSparkle (bool fromMouth)
         return;
 
     Sparkle s;
+    if (crystals.empty())
+        fromMouth = true;
     if (! fromMouth)
     {
         // pick a crystal whose tip points upward-ish (floor and wall crystals)
@@ -642,6 +676,7 @@ void CaveStage::spawnSparkle (bool fromMouth)
     s.size = 0.9f + random.nextFloat() * 2.3f * (0.6f + 0.6f * shimmerAmt);
     s.twinkle = 2.0f + random.nextFloat() * 6.0f;
     s.swayPhase = random.nextFloat() * MathConstants<float>::twoPi;
+    s.spin = (random.nextFloat() - 0.5f) * 1.6f;
     sparkles.push_back (s);
 }
 
@@ -743,12 +778,17 @@ void CaveStage::tick (double dtSeconds)
                                 }),
                 dots.end());
 
-    repaint();
+    // The scene simulates every frame but repaints at ~30 fps: plenty for slow drifting light, half the CPU.
+    repaintClock += dt;
+    if (repaintClock >= 1.0f / 32.0f)
+    {
+        repaintClock = 0.0f;
+        repaint();
+    }
 }
 
 void CaveStage::paint (Graphics& g)
 {
-    struct PaintTimer { double t0 = Time::getMillisecondCounterHiRes(); ~PaintTimer() { static double acc = 0; static int n = 0; acc += Time::getMillisecondCounterHiRes() - t0; if (++n % 60 == 0) { std::cerr << "PAINTMS " << acc / 60.0 << std::endl; acc = 0; } } } timerProbe;
     const float scale = jlimit (1.0f, 4.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
     if (background.isNull() || std::abs (scale - imageScale) > 0.01f)
         rebuildImages (scale);
@@ -767,8 +807,15 @@ void CaveStage::paint (Graphics& g)
     const float breath = 0.5f + 0.5f * std::sin (MathConstants<float>::twoPi * breathPhase);
     const float lightA = jlimit (0.0f, 0.85f, 0.14f + 0.12f * breath * (1.0f - freezeVis) + 0.36f * glow + 0.2f * flash
                                                   + 0.2f * freezeVis);
-    g.setColour (C::ice.interpolatedWith (C::frost, freezeVis * 0.7f).withAlpha (lightA));
-    g.drawImage (lightLayer, lightRect, RectanglePlacement::stretchToFit, true);
+    const float frostMix = freezeVis * 0.7f;
+    g.setOpacity (lightA * (1.0f - frostMix));
+    g.drawImage (lightIce, lightRect);
+    if (frostMix > 0.01f)
+    {
+        g.setOpacity (lightA * frostMix);
+        g.drawImage (lightFrost, lightRect);
+    }
+    g.setOpacity (1.0f);
 
     // ---- decay envelope -----------------------------------------------------------------
     const auto mb = mouthPath.getBounds().getIntersection (b).getSmallestIntegerContainer().toFloat();
@@ -794,28 +841,29 @@ void CaveStage::paint (Graphics& g)
                 g.setColour (C::frost.withAlpha (alpha * (0.5f - 0.1f * (float) k)));
                 g.fillEllipse (Rectangle<float> (s, s).withCentre (p));
             }
-            drawSpriteGlint (g, { timeToX (d.age + pre), dbToY (db) }, 2.5f + 3.5f * alpha, C::frost.withAlpha (alpha),
-                             (float) clock * 0.8f);
+            drawSpriteGlint (g, { timeToX (d.age + pre), dbToY (db) }, 2.5f + 3.5f * alpha, -1.0f, alpha, (float) clock * 0.8f);
         }
     }
 
     // ---- crystals light up with the tail ------------------------------------------------------
-    const float glowOpacity = jlimit (0.0f, 1.0f, 0.1f + 0.9f * jmax (glow, flash * 0.85f, freezeVis * 0.55f));
-    g.setOpacity (glowOpacity);
-    for (const auto& region : glowRegions)
+    const float glowOpacity = jlimit (0.0f, 1.0f, 0.9f * jmax (glow, flash * 0.85f, freezeVis * 0.55f));
+    if (glowOpacity > 0.01f)
     {
-        const auto src = region.toFloat() * imageScale;
-        g.drawImage (glowLayer, region.getX(), region.getY(), region.getWidth(), region.getHeight(),
-                     roundToInt (src.getX()), roundToInt (src.getY()), roundToInt (src.getWidth()), roundToInt (src.getHeight()));
+        g.setOpacity (glowOpacity);
+        for (const auto& region : glowRegions)
+        {
+            const auto src = region.toFloat() * imageScale;
+            g.drawImage (glowLayer, region.getX(), region.getY(), region.getWidth(), region.getHeight(),
+                         roundToInt (src.getX()), roundToInt (src.getY()), roundToInt (src.getWidth()), roundToInt (src.getHeight()));
+        }
+        g.setOpacity (1.0f);
     }
-    g.setOpacity (1.0f);
 
     for (const auto& gl : glints)
     {
         const float t = gl.age / gl.life;
         const float env = std::sin (MathConstants<float>::pi * t);
-        const Colour c = C::ice.interpolatedWith (C::violet, gl.hue).interpolatedWith (C::frost, 0.5f);
-        drawSpriteGlint (g, gl.pos, gl.size * env, c.withAlpha (env), gl.rot + t * 0.5f);
+        drawSpriteGlint (g, gl.pos, gl.size * env, gl.hue, env, gl.rot + t * 0.5f);
     }
 
     // ---- rising sparkles ------------------------------------------------------------------
@@ -829,7 +877,7 @@ void CaveStage::paint (Graphics& g)
             continue;
         Colour c = C::ice.interpolatedWith (C::violet, s.hue).interpolatedWith (C::frost, 0.35f + 0.4f * freezeVis);
         if (s.size > 2.2f)
-            drawSpriteGlint (g, s.pos, s.size * 2.0f, c.withAlpha (a), 0.0f);
+            drawSpriteGlint (g, s.pos, s.size * 2.0f, freezeVis > 0.5f ? -1.0f : s.hue, a, (s.swayPhase - 3.14159f) * 0.12f + s.spin * s.age * 0.5f);
         else
         {
             g.setColour (c.withAlpha (a * 0.25f));

@@ -245,6 +245,23 @@ namespace params
         return String (v, 2);
     }
 
+    float parseValue (const String& text, Unit unit)
+    {
+        // Accepts what formatValue() prints ("1.2 kHz", "350 ms", "2.5 s", "-inf dB") as well as bare numbers.
+        const auto t = text.trim().toLowerCase();
+        if (t.startsWith ("-inf"))
+            return -60.0f;
+        float v = t.retainCharacters ("0123456789.-+").getFloatValue();
+        switch (unit)
+        {
+            case Unit::hz:      if (t.contains ("khz") || t.endsWith ("k")) v *= 1000.0f; break;
+            case Unit::ms:      if (t.endsWith ("s") && ! t.endsWith ("ms")) v *= 1000.0f; break;
+            case Unit::seconds: if (t.endsWith ("ms")) v *= 0.001f; break;
+            default: break;
+        }
+        return v;
+    }
+
     std::unique_ptr<AudioParameterFloat> floatParam (const String& id, const String& name, float min, float max,
                                                      float def, Unit unit, float skewCentre, float step)
     {
@@ -256,7 +273,7 @@ namespace params
             ParameterID { id, 1 }, name, range, def,
             AudioParameterFloatAttributes()
                 .withStringFromValueFunction ([unit] (float v, int) { return formatValue (v, unit); })
-                .withValueFromStringFunction ([] (const String& s) { return s.retainCharacters ("0123456789.-").getFloatValue(); }));
+                .withValueFromStringFunction ([unit] (const String& s) { return parseValue (s, unit); }));
     }
 
     std::unique_ptr<AudioParameterFloat> percent (const String& id, const String& name, float def)

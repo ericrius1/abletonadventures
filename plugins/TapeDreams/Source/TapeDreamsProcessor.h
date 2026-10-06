@@ -94,7 +94,7 @@ private:
     float inMs = 0.0f, outMs = 0.0f, meterCoeff = 0.0f;
     float glow = 0.0f, glowRelease = 0.0f;
     int filterCountdown = 0;
-    float lastAge = -1.0f, lastMotorForFilter = -1.0f;
+    float lastAge = -1.0f, lastMotorForFilter = -1.0f, ageMakeup = 1.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TapeDreamsProcessor)
 };

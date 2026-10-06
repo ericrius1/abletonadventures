@@ -136,6 +136,7 @@ private:
     float ageAmt = 0.0f, wearAmt = 0.0f, hissAmt = 0.0f, dropAmt = 0.0f;
     float angleL = 0.0f, angleR = 0.8f;
     float progress = 0.34f, direction = 1.0f, visualSpeed = 1.0f;
+    float clunk = 0.0f, clunkVel = 0.0f; // little bounce when a new tape (preset) goes in
     double clock = 0.0;
     bool hover = false;
 
