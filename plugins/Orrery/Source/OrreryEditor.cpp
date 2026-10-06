@@ -177,7 +177,7 @@ void TransportReadout::paint (Graphics& g)
     const int state = lastState;
     const Colour lamp = state == OrreryProcessor::hostPlaying ? Colour (0xff7df0a8)
                       : state == OrreryProcessor::freeRunning ? Colour (0xffffcf6a) : Colour (0xff6f7690);
-    const String label = state == OrreryProcessor::hostPlaying ? "PLAYING" : state == OrreryProcessor::freeRunning ? "FREE RUN" : "STOPPED";
+    const String label = state == OrreryProcessor::hostPlaying ? "PLAYING" : state == OrreryProcessor::freeRunning ? "FREE RUN" : "PRESS PLAY";
 
     auto lampArea = Rectangle<float> (9.0f, 9.0f).withCentre ({ b.getX() + radius + 2.0f, b.getCentreY() });
     g.setColour (lamp.withAlpha (0.15f + 0.35f * glow));
@@ -342,6 +342,8 @@ void OrreryEditor::selectOrbit (int orbit)
     make (chanceKnob, "prob", "Chance", "Probability that each pulse plays - lower values let the pattern breathe and sparkle");
     make (gateKnob, "gate", "Gate", "Note length as a fraction of the gap between pulses (also damps the bell)");
 
+    octaveKnob->setBipolar (true);
+
     auto* bk = beatsKnob.get();
     auto* pk = pulsesKnob.get();
     auto* ok = octaveKnob.get();
@@ -392,13 +394,13 @@ void OrreryEditor::layoutContent()
         onToggleArea = titleRow.removeFromRight (56.0f).reduced (0.0f, 2.0f).toNearestInt();
         planetTitleArea = titleRow;
 
-        c.removeFromTop (6.0f);
+        c.removeFromTop (12.0f);
         const float cellW = c.getWidth() / 5.0f;
-        auto row1 = c.removeFromTop (88.0f);
+        auto row1 = c.removeFromTop (82.0f);
         for (int k = 0; k < 5; ++k)
             planetKnobCells[(size_t) k] = Rectangle<float> (row1.getX() + cellW * (float) k, row1.getY(), cellW, row1.getHeight()).reduced (2.0f, 0.0f).toNearestInt();
-        c.removeFromTop (4.0f);
-        auto row2 = c.removeFromTop (88.0f);
+        c.removeFromTop (10.0f);
+        auto row2 = c.removeFromTop (82.0f);
         for (int k = 0; k < 3; ++k)
             planetKnobCells[(size_t) k + 5] = Rectangle<float> (row2.getX() + cellW * (float) k, row2.getY(), cellW, row2.getHeight()).reduced (2.0f, 0.0f).toNearestInt();
         rhythm.setBounds (Rectangle<float> (row2.getX() + cellW * 3.0f, row2.getY(), cellW * 2.0f, row2.getHeight()).reduced (4.0f, 2.0f).toNearestInt());

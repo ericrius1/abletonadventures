@@ -1010,6 +1010,24 @@ void OrreryStage::paint (Graphics& g)
     for (int i = 0; i < orrery::numOrbits; ++i)
         drawPlanet (g, i, planetPos[(size_t) i], proc.orbitParams[(size_t) i].on->load() > 0.5f);
 
+    // name tag for the planet under the mouse
+    if (hovered >= 0)
+    {
+        const auto& pl = orrery::planets()[(size_t) hovered];
+        const auto p = planetPos[(size_t) hovered];
+        const String name = String (pl.name).toUpperCase();
+        const auto font = aa::Fonts::display (10.5f * u).withExtraKerningFactor (0.1f);
+        const float w = aa::Fonts::textWidth (font, name) + 14.0f * u;
+        auto tag = Rectangle<float> (w, 16.0f * u).withCentre (p.translated (0.0f, (pl.size + 16.0f) * u));
+        g.setColour (pal::ink.withAlpha (0.8f));
+        g.fillRoundedRectangle (tag, 8.0f * u);
+        g.setColour (Colour (pl.colour).withAlpha (0.8f));
+        g.drawRoundedRectangle (tag, 8.0f * u, 0.8f);
+        g.setFont (font);
+        g.setColour (pal::parchment);
+        g.drawText (name, tag, Justification::centred, false);
+    }
+
     // floating note names
     const auto labelFont = aa::Fonts::uiBold (11.5f * u);
     for (auto& l : labels)

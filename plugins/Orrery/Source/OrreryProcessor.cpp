@@ -100,7 +100,7 @@ AudioProcessorValueTreeState::ParameterLayout OrreryProcessor::createLayout()
     layout.add (P::percent ("reverb", "Reverb", 32.0f));
     layout.add (P::floatParam ("volume", "Volume", -30.0f, 6.0f, 0.0f, P::Unit::db));
 
-    layout.add (P::toggle ("freerun", "Free Run", true));
+    layout.add (P::toggle ("freerun", "Free Run", false));
     layout.add (P::toggle ("follow", "Follow MIDI", true));
     layout.add (P::toggle ("sound", "Sound", true));
     layout.add (P::percent ("spread", "Spread", 60.0f));
@@ -180,13 +180,13 @@ OrreryProcessor::OrreryProcessor()
 
         { "Celestial Waltz",
           preset ({ { "scale", 5 }, { "root", 5 }, { "material", 30 }, { "bright", 48 }, { "decay", 3.2f },
-                    { "echo", 20 }, { "echotime", 9 }, { "reverb", 42 } },
+                    { "echo", 20 }, { "echotime", 9 }, { "reverb", 42 }, { "volume", 1.5f } },
                   { { { 3, 3, 4, 0, 52, 100, 40, 0 }, { 6, 4, 2, 0, 58, 100, 50, 0 }, { 12, 5, 6, 0, 50, 90, 50, 0 },
                       { 6, 2, 9, 0, 44, 80, 50, 0 }, { 3, 1, 0, -1, 80, 100, 90, 0 }, { 24, 7, 11, 0, 40, 70, 50, 0 } } }) },
 
         { "Pentatonic Rain",
           preset ({ { "scale", 2 }, { "root", 7 }, { "material", 8 }, { "bright", 70 }, { "decay", 3.5f },
-                    { "echo", 34 }, { "feedback", 50 }, { "reverb", 55 }, { "spread", 85 } },
+                    { "echo", 34 }, { "feedback", 50 }, { "reverb", 55 }, { "spread", 85 }, { "volume", 4.0f } },
                   { { { 1, 4, 7, 0, 45, 22, 30, 0 }, { 2, 7, 9, 0, 40, 30, 30, 0 }, { 3, 8, 5, 0, 45, 34, 30, 0 },
                       { 1, 3, 11, 0, 38, 18, 30, 0 }, { 4, 2, 0, -1, 56, 100, 80, 0 }, { 5, 6, 12, 0, 35, 25, 30, 0 } } }) },
 
@@ -204,31 +204,31 @@ OrreryProcessor::OrreryProcessor()
 
         { "Slow Galaxy",
           preset ({ { "scale", 4 }, { "root", 2 }, { "speed", 0 }, { "material", 40 }, { "bright", 36 }, { "decay", 8.0f },
-                    { "echo", 26 }, { "echotime", 10 }, { "feedback", 50 }, { "reverb", 70 }, { "spread", 85 } },
+                    { "echo", 26 }, { "echotime", 10 }, { "feedback", 50 }, { "reverb", 70 }, { "spread", 85 }, { "volume", 3.5f } },
                   { { { 4, 4, 0, 0, 60, 100, 60, 0 }, { 4, 3, 4, 0, 55, 100, 60, 0 }, { 8, 5, 9, 0, 50, 100, 60, 0 },
                       { 6, 4, 6, 0, 45, 80, 60, 0 }, { 16, 1, 0, -1, 70, 100, 100, 0 }, { 12, 7, 11, 0, 40, 70, 60, 0 } } }) },
 
         { "Solar Wind",
           preset ({ { "scale", 6 }, { "root", 9 }, { "speed", 6 }, { "material", 52 }, { "bright", 64 }, { "decay", 1.2f },
-                    { "echo", 34 }, { "echotime", 6 }, { "feedback", 45 }, { "reverb", 25 } },
+                    { "echo", 34 }, { "echotime", 6 }, { "feedback", 45 }, { "reverb", 25 }, { "volume", 2.0f } },
                   { { { 4, 8, 0, 0, 68, 90, 30, 0 }, { 4, 6, 2, 0, 62, 100, 40, 0 }, { 4, 5, 4, 0, 60, 100, 40, 0 },
                       { 8, 3, 7, 0, 55, 80, 50, 0 }, { 4, 2, 0, -1, 80, 100, 70, 0 }, { 16, 11, 9, 0, 50, 70, 40, 0 } } }) },
 
         { "Lunar Lullaby",
           preset ({ { "scale", 0 }, { "root", 5 }, { "speed", 2 }, { "material", 18 }, { "bright", 30 }, { "decay", 4.0f },
-                    { "echo", 20 }, { "echotime", 8 }, { "reverb", 50 } },
+                    { "echo", 20 }, { "echotime", 8 }, { "reverb", 50 }, { "volume", 3.5f } },
                   { { { 3, 3, 4, 0, 46, 100, 50, 0 }, { 3, 2, 2, 0, 50, 100, 60, 0 }, { 6, 4, 7, 0, 42, 80, 50, 0 },
                       { 12, 1, 0, -1, 60, 100, 100, 0 }, off, { 12, 5, 9, 0, 38, 60, 50, 0 } } }) },
 
         { "Meteor Shower",
           preset ({ { "scale", 5 }, { "root", 2 }, { "speed", 6 }, { "material", 12 }, { "bright", 85 }, { "decay", 2.0f },
-                    { "echo", 42 }, { "echotime", 2 }, { "feedback", 55 }, { "reverb", 45 }, { "spread", 100 } },
+                    { "echo", 42 }, { "echotime", 2 }, { "feedback", 55 }, { "reverb", 45 }, { "spread", 100 }, { "volume", 2.0f } },
                   { { { 1, 4, 7, 1, 50, 30, 20, 0 }, { 1, 3, 9, 1, 45, 25, 20, 0 }, { 2, 5, 11, 0, 50, 35, 20, 0 },
                       { 1, 2, 12, 0, 40, 30, 20, 0 }, { 8, 2, 0, -1, 70, 100, 80, 0 }, { 3, 7, 14, 0, 40, 30, 20, 0 } } }) },
 
         { "Marimba Machine",
           preset ({ { "scale", 1 }, { "root", 0 }, { "material", 50 }, { "bright", 56 }, { "decay", 1.0f },
-                    { "echo", 15 }, { "echotime", 5 }, { "reverb", 18 } },
+                    { "echo", 15 }, { "echotime", 5 }, { "reverb", 18 }, { "volume", 4.5f } },
                   { { { 4, 8, 0, 0, 70, 100, 30, 0 }, { 4, 6, 2, 0, 60, 100, 40, 0 }, { 3, 4, 4, 0, 60, 100, 40, 0 },
                       { 8, 5, 6, 0, 55, 100, 40, 0 }, { 4, 1, 0, -1, 85, 100, 80, 0 }, { 6, 5, 9, 0, 50, 80, 40, 0 } } }) },
     });
@@ -268,6 +268,8 @@ void OrreryProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     fbAmount.reset (sampleRate, 0.05, feedback->load() / 100.0f);
     flushFade = 1.0f;
     flushState = 0;
+    glueEnv = 0.0f;
+    glueGain = 1.0f;
     meter.prepare ((float) sampleRate);
 
     held.fill (false);
@@ -282,6 +284,7 @@ void OrreryProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     // Anything that was still sounding gets a note-off at the start of the next block.
     flushRequested.store (true);
+    prepared = true;
 }
 
 void OrreryProcessor::releaseResources()
@@ -498,10 +501,22 @@ void OrreryProcessor::processFx (float* left, float* right, int numSamples)
     const float flushStep = 1.0f / (0.008f * srf);
     bool clearNow = false;
 
+    // glue compressor: -10 dBFS threshold, 3:1, gentle attack/release
+    constexpr float glueThreshold = 0.316f, glueSlope = 1.0f - 1.0f / 3.0f;
+    const float glueAttack = aa::dsp::onePoleCoeff (0.004f, srf), glueRelease = aa::dsp::onePoleCoeff (0.25f, srf);
+    const float glueGainSmooth = aa::dsp::onePoleCoeff (0.002f, srf);
+
     for (int i = 0; i < numSamples; ++i)
     {
         // struck resonators leave a tiny DC offset: block it before the effects
-        const float dl = dcBlockL.highpass (left[i]), dr = dcBlockR.highpass (right[i]);
+        float dl = dcBlockL.highpass (left[i]), dr = dcBlockR.highpass (right[i]);
+
+        const float level = jmax (std::abs (dl), std::abs (dr));
+        glueEnv += (level > glueEnv ? glueAttack : glueRelease) * (level - glueEnv);
+        const float targetGain = glueEnv > glueThreshold ? std::pow (glueThreshold / glueEnv, glueSlope) : 1.0f;
+        glueGain += glueGainSmooth * (targetGain - glueGain);
+        dl *= glueGain;
+        dr *= glueGain;
 
         echoDelaySamples += delaySmooth * (targetDelay - echoDelaySamples);
         const float el = echoL.read (echoDelaySamples);
@@ -571,7 +586,7 @@ void OrreryProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& midi
     midiOut.clear();
     midiOut.ensureSize (8192);
 
-    if (numSamples <= 0)
+    if (numSamples <= 0 || ! prepared)
     {
         midi.clear();
         return;
@@ -825,6 +840,21 @@ void OrreryProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& midi
     uiRunState.store (transport.hostPlaying ? hostPlaying : (runFree ? freeRunning : stopped));
     uiBeatsPerBar.store (jmax (1, transport.timeSigNumerator * 4 / jmax (1, transport.timeSigDenominator)));
     uiLevel.store (meter.level.load());
+}
+
+void OrreryProcessor::processBlockBypassed (AudioBuffer<float>& buffer, MidiBuffer& midi)
+{
+    // Silent while bypassed, but never leave the instruments we drive with stuck notes.
+    buffer.clear();
+    midi.clear();
+    noteOffAll (midi, 0);
+    if (prepared)
+        for (auto& v : voices)
+            v.kill();
+    held.fill (false);
+    numHeld = 0;
+    chordSize = 0;
+    wasRunning = false; // resume as if the transport had jumped
 }
 
 //==============================================================================

@@ -18,6 +18,7 @@ public:
     void reset() override;
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override { return isInstrumentLayout (layouts); }
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     juce::AudioProcessorEditor* createEditor() override;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
@@ -94,6 +95,7 @@ private:
 
     aa::dsp::Transport transport;
     double sr = 44100.0;
+    bool prepared = false;
 
     // ---- sequencer --------------------------------------------------------------
     bool wasRunning = false;
@@ -146,6 +148,7 @@ private:
     aa::dsp::FdnReverb reverbFx;
     float lastReverbAmount = -1.0f;
     aa::dsp::Smoother echoMix, reverbMix, outGain, fbAmount;
+    float glueEnv = 0.0f, glueGain = 1.0f; // bus compressor that tames dense patches
     float flushFade = 1.0f;     // all-sound-off fade
     int flushState = 0;         // 0 idle, 1 fading down, 2 fading up
     aa::dsp::PeakMeter meter;
