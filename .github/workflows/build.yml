@@ -156,7 +156,10 @@ jobs:
 
           ## What's inside
           Stardust (pad synth) · Critter Kit (drum machine) · Orrery (polyrhythm sequencer) · Babble (singing synth) ·
-          Boing (bouncing-ball delay) · Gremlin (glitch) · Tape Dreams (lo-fi tape) · Crystal Cave (shimmer reverb)
+          Dandelion (granular sampler) · Boing (bouncing-ball delay) · Gremlin (glitch) · Tape Dreams (lo-fi tape) ·
+          Crystal Cave (shimmer reverb)
+
+          🎬 **adventure-pack-showcase.mp4** below is a 1-minute tour of all nine.
           EOF
           sed -i 's/^          //' notes.md
           gh release delete "$TAG" --yes --cleanup-tag || true
