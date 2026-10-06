@@ -160,5 +160,7 @@ jobs:
           EOF
           sed -i 's/^          //' notes.md
           gh release delete "$TAG" --yes --cleanup-tag || true
-          gh release create "$TAG" dist/*.zip dist/install-macos.sh dist/install-windows.ps1 \
+          shopt -s nullglob
+          EXTRA=(docs/media/*.mp4)
+          gh release create "$TAG" dist/*.zip dist/install-macos.sh dist/install-windows.ps1 "${EXTRA[@]}" \
             --title "Adventure Pack $TAG" --notes-file notes.md --target "$GITHUB_SHA" --latest
