@@ -3,10 +3,12 @@
 **Nine whimsical, good-looking, genuinely useful plugins for Ableton Live**: five instruments and four effects,
 each with its own hand-drawn personality. VST3 for macOS + Windows, Audio Units for macOS.
 
-![The Adventure Pack](docs/screenshots/montage.png)
+<!-- Inline video player: drop docs/media/adventure-pack-showcase-720p.mp4 onto this line in GitHub's web editor. -->
 
-🎬 **[Watch the 1-minute tour](docs/media/adventure-pack-showcase.mp4)**: every plugin's real UI and real audio, cut together as one song.
-It's also attached to each [release](https://github.com/ericrius1/abletonadventures/releases/latest).
+[![A tour of all nine plugins](docs/media/showcase-preview.gif)](docs/media/adventure-pack-showcase.mp4)
+
+🎬 **[Watch the full 1-minute tour with sound](docs/media/adventure-pack-showcase.mp4)**: every plugin's real UI and real audio,
+cut together as one song. It's also attached to each [release](https://github.com/ericrius1/abletonadventures/releases/latest).
 
 ## ⬇️ Install (2 minutes)
 
