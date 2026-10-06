@@ -191,5 +191,5 @@ private:
 
     juce::Image background;
     float backgroundScale = 0.0f;
-    double clock = 0.0;
+    double clock = 0.0, frameAccumulator = 1.0;
 };

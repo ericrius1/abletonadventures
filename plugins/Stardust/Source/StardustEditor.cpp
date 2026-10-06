@@ -219,7 +219,7 @@ void EnvGroup::resized()
 void EnvGroup::tick()
 {
     shownLevel += 0.5f * (live.load (std::memory_order_relaxed) - shownLevel);
-    float signature = shownLevel * 1000.0f;
+    float signature = std::round (shownLevel * 200.0f) * 5.0f;
     for (int i = 0; i < 4; ++i)
         signature += params[(size_t) i]->getValue() * (float) (i + 3) * 7.31f + (sliders[i]->isMouseOverOrDragging() ? 50.0f * (float) (i + 1) : 0.0f);
     if (std::abs (signature - lastSignature) > 0.01f)
@@ -249,7 +249,7 @@ void EnvGroup::paint (Graphics& g)
     }
     else
     {
-        g.setFont (aa::Fonts::uiBold (10.0f).withExtraKerningFactor (0.16f));
+        g.setFont (aa::Fonts::display (10.0f).withExtraKerningFactor (0.12f));
         g.setColour (accent.withAlpha (0.9f));
         g.drawText (title.toUpperCase(), labelArea, Justification::centredLeft);
     }
@@ -297,7 +297,7 @@ void EnvGroup::paint (Graphics& g)
         const float ly = bottom - jlimit (0.0f, 1.0f, shownLevel) * plot.getHeight();
         g.setColour (Colours::white.withAlpha (0.25f));
         g.fillRect (Rectangle<float> (plot.getX(), ly - 0.5f, plot.getWidth(), 1.0f));
-        drawSparkle (g, { plot.getX() - 1.0f, ly }, 5.5f, accent.interpolatedWith (Colours::white, 0.4f), 1.0f);
+        drawSparkle (g, { plot.getX() + 2.5f, ly }, 5.0f, accent.interpolatedWith (Colours::white, 0.4f), 1.0f);
     }
 
     // stage letters
@@ -873,7 +873,7 @@ void StardustEditor::drawGlassPanel (Graphics& g, Rectangle<float> r, const Stri
     if (title.isEmpty())
         return;
 
-    const auto font = aa::Fonts::uiBold (11.0f).withExtraKerningFactor (0.2f);
+    const auto font = aa::Fonts::display (11.5f).withExtraKerningFactor (0.14f);
     const auto text = title.toUpperCase();
     const float tw = aa::Fonts::textWidth (font, text);
     const Point<float> star (r.getX() + 18.0f, r.getY() + 18.0f);
@@ -999,6 +999,7 @@ void StardustEditor::paintContent (Graphics& g)
     const float scale = jlimit (1.0f, 4.0f, g.getInternalContext().getPhysicalPixelScaleFactor());
     if (background.isNull() || std::abs (scale - backgroundScale) > 0.01f)
         rebuildBackground (scale);
+    g.setOpacity (1.0f);
     g.drawImage (background, baseBounds().toFloat());
 }
 
@@ -1015,8 +1016,15 @@ void StardustEditor::paintContentOver (Graphics& g)
     }
 }
 
-void StardustEditor::onFrame (double, double dt)
+void StardustEditor::onFrame (double, double dtFrame)
 {
+    // Animate at most ~60 fps, whatever the display refresh rate: keeps CPU modest on 120/144 Hz screens.
+    frameAccumulator += dtFrame;
+    if (frameAccumulator < 1.0 / 62.0)
+        return;
+    const double dt = jmin (0.1, frameAccumulator);
+    frameAccumulator = 0.0;
+
     clock += dt;
     space.tick (dt);
     waveA.tick();

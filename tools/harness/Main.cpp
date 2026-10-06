@@ -100,6 +100,7 @@ struct SignalSource
     Random rng { 1234 };
     float kickPhase = 0, kickEnv = 0, kickFreq = 0, snareEnv = 0, hatEnv = 0, pluckEnv = 0, pluckPhase = 0, pluckFreq = 220;
     float sinePhase = 0, lp = 0;
+    int lastArpNote = -1;
     std::vector<std::pair<int64, MidiMessage>> fileEvents;
     size_t nextFileEvent = 0;
     AudioBuffer<float> inputAudio;
@@ -268,8 +269,10 @@ struct SignalSource
         {
             static const int notes[] = { 60, 64, 67, 72, 76, 72, 67, 64 };
             const int n = notes[step % 8] + ((bar % 2) ? -3 : 0);
+            if (lastArpNote >= 0)
+                out.addEvent (MidiMessage::noteOff (1, lastArpNote), sampleOffset); // each note lasts one 16th
             out.addEvent (MidiMessage::noteOn (1, n, (uint8) 100), sampleOffset);
-            out.addEvent (MidiMessage::noteOff (1, n), sampleOffset + 2000 < 512 ? sampleOffset + 2000 : sampleOffset);
+            lastArpNote = n;
         }
         else if (midi == "hold")
         {
@@ -767,6 +770,8 @@ public:
             window->setContentNonOwned (editor, true);
         window->setTopLeftPosition (0, 0);
         window->setVisible (true);
+        // Park the pointer far away so no control shows its hover state in screenshots/recordings.
+        Desktop::setMousePosition ({ 4000, 4000 });
 
         if (o.width > 0)
         {

@@ -23,10 +23,16 @@ class SpaceView : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     explicit SpaceView (StardustProcessor& p);
+    ~SpaceView() override;
 
     void tick (double dt);
     void paint (juce::Graphics&) override;
     void resized() override;
+
+    // click / drag across space to play a pentatonic "star harp"
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
 
 private:
     struct Star { float x, y, size, brightness, phase, rate; int layer; juce::Colour colour; };
@@ -40,6 +46,10 @@ private:
     void spawnSparkle (const stardust::GlintEvent& e);
     void updateScope();
     juce::Colour noteColour (int note) const;
+    float xForNote (int note) const;
+    int noteForX (float x) const;
+    void playHarpNote (int note, float y);
+    void stopHarpNote();
 
     StardustProcessor& processor;
     std::vector<Star> stars;
@@ -49,14 +59,16 @@ private:
     Comet comet;
     float cometTimer = 3.0f;
 
-    static constexpr int scopePoints = 180;
+    static constexpr int scopePoints = 150;
     std::array<float, scopePoints> dispL {}, dispR {};
     float scopeGain = 1.0f, level = 0.0f, warp = 0.0f;
 
-    juce::Image background, overlay;
+    static constexpr float nebulaMargin = 30.0f;
+    juce::Image background, nebulaFar, nebulaNear, planet, overlay;
     float imageScale = 0.0f;
     double clock = 0.0;
-    int voices = 0;
+    int voices = 0, harpNote = -1;
+    float idleTime = 0.0f, hintAlpha = 0.0f;
     juce::String chordText;
     juce::Random random { 0x57A2 };
 };

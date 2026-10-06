@@ -58,7 +58,7 @@ set(AA_PLUGINS
     Dandelion)
 
 # Plugins still being finished: only built when asked for explicitly with -DAA_ONLY=<Name>.
-set(AA_WIP_PLUGINS Stardust CritterKit Babble)
+set(AA_WIP_PLUGINS CritterKit Babble)
 
 foreach(plugin IN LISTS AA_PLUGINS)
     if((AA_ONLY STREQUAL "" AND NOT plugin IN_LIST AA_WIP_PLUGINS) OR AA_ONLY STREQUAL plugin)

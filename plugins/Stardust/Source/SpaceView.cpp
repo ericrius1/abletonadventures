@@ -57,12 +57,71 @@ SpaceView::SpaceView (StardustProcessor& p) : processor (p)
 {
     setOpaque (false);
     setInterceptsMouseClicks (true, false);
-    setTooltip ("Deep space: the glowing line is your sound, every note sends out a burst of stars "
-                "and every Twinkle glint lights up a star.");
-    particles.reserve (400);
+    setTooltip ("Deep space: the glowing line is your sound, every note sends out a burst of stars and every "
+                "Twinkle glint lights up a star. Click or drag across it to play a starry pentatonic harp.");
+    particles.reserve (300);
     rings.reserve (40);
-    sparkles.reserve (80);
+    sparkles.reserve (64);
+
+    // forget events queued while the editor was closed
+    stardust::NoteEvent ne;
+    while (processor.engine.noteEvents.pop (ne)) {}
+    stardust::GlintEvent ge;
+    while (processor.engine.glintEvents.pop (ge)) {}
 }
+
+SpaceView::~SpaceView()
+{
+    stopHarpNote();
+}
+
+float SpaceView::xForNote (int note) const
+{
+    const float w = (float) getWidth();
+    return jmap ((float) jlimit (24, 108, note), 24.0f, 108.0f, w * 0.1f, w * 0.9f);
+}
+
+int SpaceView::noteForX (float x) const
+{
+    const float w = jmax (1.0f, (float) getWidth());
+    const int raw = roundToInt (jmap (x, w * 0.1f, w * 0.9f, 24.0f, 108.0f));
+    static const int pentatonic[] = { 0, 2, 4, 7, 9 };
+    int best = 60, bestDistance = 1000;
+    for (int octave = 3; octave <= 8; ++octave)
+        for (int pc : pentatonic)
+        {
+            const int n = octave * 12 + pc;
+            if (n < 36 || n > 96)
+                continue;
+            if (std::abs (n - raw) < bestDistance)
+            {
+                bestDistance = std::abs (n - raw);
+                best = n;
+            }
+        }
+    return best;
+}
+
+void SpaceView::playHarpNote (int note, float y)
+{
+    if (note == harpNote)
+        return;
+    stopHarpNote();
+    harpNote = note;
+    const float velocity = jlimit (0.35f, 1.0f, 1.0f - 0.6f * y / jmax (1.0f, (float) getHeight()));
+    processor.keyboardState.noteOn (1, note, velocity);
+}
+
+void SpaceView::stopHarpNote()
+{
+    if (harpNote >= 0)
+        processor.keyboardState.noteOff (1, harpNote, 0.0f);
+    harpNote = -1;
+}
+
+void SpaceView::mouseDown (const MouseEvent& e) { playHarpNote (noteForX (e.position.x), e.position.y); }
+void SpaceView::mouseDrag (const MouseEvent& e) { playHarpNote (noteForX (e.position.x), e.position.y); }
+void SpaceView::mouseUp (const MouseEvent&) { stopHarpNote(); }
 
 void SpaceView::resized()
 {
@@ -102,7 +161,7 @@ void SpaceView::rebuildImages (float scale)
     const int pw = jmax (1, roundToInt (w * scale)), ph = jmax (1, roundToInt (h * scale));
     auto bounds = Rectangle<float> (w, h);
 
-    // ---- background: deep space, nebula, a ringed planet --------------------------------
+    // ---- background: the deep-space gradient and a faint band of star dust ------------------
     background = Image (Image::ARGB, pw, ph, true);
     {
         Graphics g (background);
@@ -114,40 +173,66 @@ void SpaceView::rebuildImages (float scale)
         g.setGradientFill (ColourGradient (Colour (0xff05061a), 0.0f, 0.0f, Colour (0xff170c38), w * 0.7f, h, false));
         g.fillAll();
 
-        Random r (77);
-        struct Cloud { float x, y, rx, ry; Colour c; float a; };
-        const Cloud clouds[] = {
-            { 0.18f, 0.30f, 0.34f, 0.55f, magenta, 0.20f },
-            { 0.30f, 0.72f, 0.28f, 0.40f, Colour (0xff6a3cff), 0.22f },
-            { 0.62f, 0.25f, 0.36f, 0.45f, cyan, 0.12f },
-            { 0.78f, 0.62f, 0.30f, 0.50f, magenta, 0.12f },
-            { 0.50f, 0.50f, 0.50f, 0.30f, Colour (0xff3a2a9c), 0.25f },
-            { 0.90f, 0.20f, 0.18f, 0.30f, gold, 0.06f },
-        };
-        for (const auto& c : clouds)
-            for (int k = 0; k < 7; ++k)
-            {
-                const float cx = (c.x + (r.nextFloat() - 0.5f) * 0.14f) * w;
-                const float cy = (c.y + (r.nextFloat() - 0.5f) * 0.2f) * h;
-                const float rx = c.rx * w * (0.45f + 0.5f * r.nextFloat());
-                const float ry = c.ry * h * (0.45f + 0.5f * r.nextFloat());
-                g.setGradientFill (ColourGradient (c.c.withAlpha (c.a * (0.4f + 0.5f * r.nextFloat())), cx, cy,
-                                                   c.c.withAlpha (0.0f), cx + rx, cy, true));
-                g.fillEllipse (cx - rx, cy - ry, rx * 2.0f, ry * 2.0f);
-            }
-
-        // star dust band
+        Random r (91);
         for (int i = 0; i < 260; ++i)
         {
             const float t = r.nextFloat();
             const float x = t * w;
             const float y = h * (0.62f - 0.35f * t) + (r.nextFloat() - 0.5f) * h * 0.28f * (0.4f + r.nextFloat());
             g.setColour (starWhite.withAlpha (0.05f + 0.18f * r.nextFloat()));
-            const float s = 0.5f + r.nextFloat() * 0.9f;
-            g.fillEllipse (x, y, s, s);
+            const float sz = 0.5f + r.nextFloat() * 0.9f;
+            g.fillEllipse (x, y, sz, sz);
         }
+    }
 
-        // ringed planet peeking in at the bottom right
+    // ---- two nebula layers, larger than the window so they can drift (parallax) -------------
+    struct Cloud { float x, y, rx, ry; Colour c; float a; };
+    auto renderNebula = [&] (Image& img, const Cloud* clouds, int numClouds, int seed)
+    {
+        const float nw = w + 2.0f * nebulaMargin, nh = h + 2.0f * nebulaMargin;
+        img = Image (Image::ARGB, jmax (1, roundToInt (nw * scale)), jmax (1, roundToInt (nh * scale)), true);
+        Graphics g (img);
+        g.addTransform (AffineTransform::scale (scale));
+        Random r (seed);
+        for (int ci = 0; ci < numClouds; ++ci)
+        {
+            const auto& c = clouds[ci];
+            for (int k = 0; k < 8; ++k)
+            {
+                const float cx = (c.x + (r.nextFloat() - 0.5f) * 0.16f) * nw;
+                const float cy = (c.y + (r.nextFloat() - 0.5f) * 0.22f) * nh;
+                const float rx = c.rx * nw * (0.4f + 0.55f * r.nextFloat());
+                const float ry = c.ry * nh * (0.4f + 0.55f * r.nextFloat());
+                g.setGradientFill (ColourGradient (c.c.withAlpha (c.a * (0.4f + 0.5f * r.nextFloat())), cx, cy,
+                                                   c.c.withAlpha (0.0f), cx + rx, cy, true));
+                g.fillEllipse (cx - rx, cy - ry, rx * 2.0f, ry * 2.0f);
+            }
+        }
+    };
+
+    const Cloud far[] = {
+        { 0.50f, 0.50f, 0.55f, 0.32f, Colour (0xff3a2a9c), 0.28f },
+        { 0.20f, 0.70f, 0.30f, 0.40f, Colour (0xff6a3cff), 0.20f },
+        { 0.85f, 0.25f, 0.22f, 0.35f, gold, 0.05f },
+    };
+    const Cloud nearClouds[] = {
+        { 0.18f, 0.32f, 0.32f, 0.52f, magenta, 0.20f },
+        { 0.64f, 0.26f, 0.34f, 0.42f, cyan, 0.12f },
+        { 0.80f, 0.66f, 0.28f, 0.46f, magenta, 0.12f },
+        { 0.40f, 0.80f, 0.20f, 0.25f, cyan, 0.06f },
+    };
+    renderNebula (nebulaFar, far, (int) std::size (far), 77);
+    renderNebula (nebulaNear, nearClouds, (int) std::size (nearClouds), 78);
+
+    // ---- foreground: a ringed planet peeking in at the bottom right, and its moon ------------
+    planet = Image (Image::ARGB, pw, ph, true);
+    {
+        Graphics g (planet);
+        g.addTransform (AffineTransform::scale (scale));
+        Path clip;
+        clip.addRoundedRectangle (bounds, cornerRadius);
+        g.reduceClipRegion (clip);
+
         const Point<float> pc (w - 58.0f, h - 6.0f);
         const float pr = 40.0f;
         auto ringPath = [&] (bool back)
@@ -163,10 +248,13 @@ void SpaceView::rebuildImages (float scale)
         g.setColour (lavender.withAlpha (0.15f));
         g.strokePath (ringPath (true), PathStrokeType (1.5f), AffineTransform::scale (1.08f, 1.08f, pc.x, pc.y));
 
+        // atmosphere glow
+        g.setGradientFill (ColourGradient (lavender.withAlpha (0.25f), pc.x, pc.y, lavender.withAlpha (0.0f), pc.x + pr * 1.35f, pc.y, true));
+        g.fillEllipse (Rectangle<float> (pr * 2.7f, pr * 2.7f).withCentre (pc));
+
         g.setGradientFill (ColourGradient (Colour (0xff8a6bff), pc.x - pr * 0.5f, pc.y - pr * 0.6f,
                                            Colour (0xff1c1250), pc.x + pr * 0.6f, pc.y + pr * 0.5f, true));
         g.fillEllipse (Rectangle<float> (pr * 2.0f, pr * 2.0f).withCentre (pc));
-        // bands
         g.saveState();
         Path planetClip;
         planetClip.addEllipse (Rectangle<float> (pr * 2.0f, pr * 2.0f).withCentre (pc));
@@ -174,8 +262,9 @@ void SpaceView::rebuildImages (float scale)
         for (int b = 0; b < 5; ++b)
         {
             g.setColour ((b % 2 == 0 ? magenta : cyan).withAlpha (0.10f));
-            g.fillRect (Rectangle<float> (pc.x - pr, pc.y - pr + (float) b * pr * 0.32f + 6.0f, pr * 2.0f, pr * 0.12f)
-                            .transformedBy (AffineTransform::rotation (-0.28f, pc.x, pc.y)));
+            Path band;
+            band.addRectangle (pc.x - pr * 1.2f, pc.y - pr + (float) b * pr * 0.32f + 6.0f, pr * 2.4f, pr * 0.12f);
+            g.fillPath (band, AffineTransform::rotation (-0.28f, pc.x, pc.y));
         }
         g.setGradientFill (ColourGradient (Colours::transparentBlack, pc.x - pr * 0.2f, pc.y - pr * 0.2f,
                                            Colours::black.withAlpha (0.55f), pc.x + pr, pc.y + pr * 0.4f, true));
@@ -189,7 +278,6 @@ void SpaceView::rebuildImages (float scale)
         g.setColour (starWhite.withAlpha (0.35f));
         g.strokePath (ringPath (false), PathStrokeType (1.0f));
 
-        // a tiny moon
         const Point<float> mc (w - 132.0f, h - 34.0f);
         g.setGradientFill (ColourGradient (Colour (0xffe8e2ff), mc.x - 2.0f, mc.y - 3.0f, Colour (0xff5a4f99), mc.x + 5.0f, mc.y + 5.0f, true));
         g.fillEllipse (Rectangle<float> (9.0f, 9.0f).withCentre (mc));
@@ -223,13 +311,12 @@ void SpaceView::rebuildImages (float scale)
 //==============================================================================
 void SpaceView::spawnBurst (int note, float velocity)
 {
-    const float w = (float) getWidth(), h = (float) getHeight();
-    const float x = jmap ((float) jlimit (24, 108, note), 24.0f, 108.0f, w * 0.1f, w * 0.9f);
-    const Point<float> origin (x, h * 0.5f + (random.nextFloat() - 0.5f) * 16.0f);
+    const float h = (float) getHeight();
+    const Point<float> origin (xForNote (note), h * 0.5f + (random.nextFloat() - 0.5f) * 16.0f);
     const auto colour = noteColour (note);
 
-    const int count = 10 + (int) (velocity * 16.0f);
-    for (int i = 0; i < count && particles.size() < 380; ++i)
+    const int count = 8 + (int) (velocity * 11.0f);
+    for (int i = 0; i < count && particles.size() < 260; ++i)
     {
         const float angle = random.nextFloat() * MathConstants<float>::twoPi;
         const float speed = (25.0f + random.nextFloat() * 95.0f) * (0.6f + 0.6f * velocity);
@@ -247,7 +334,7 @@ void SpaceView::spawnBurst (int note, float velocity)
 
 void SpaceView::spawnSparkle (const stardust::GlintEvent& e)
 {
-    if (sparkles.size() >= 70)
+    if (sparkles.size() >= 48)
         sparkles.erase (sparkles.begin());
 
     const float w = (float) getWidth(), h = (float) getHeight();
@@ -353,6 +440,8 @@ void SpaceView::tick (double dtD)
 
     updateScope();
     voices = processor.engine.activeVoiceCount.load (std::memory_order_relaxed);
+    idleTime = (voices == 0 && level < 0.002f) ? idleTime + dt : 0.0f;
+    hintAlpha += ((idleTime > 1.5f ? 1.0f : 0.0f) - hintAlpha) * jmin (1.0f, dt * 2.5f);
 
     // chord read-out from the keyboard state (covers incoming MIDI and on-screen keys)
     String chord;
@@ -427,12 +516,30 @@ void SpaceView::paint (Graphics& g)
 
     auto bounds = getLocalBounds().toFloat();
     const float w = bounds.getWidth(), h = bounds.getHeight();
+    g.setOpacity (1.0f);
     g.drawImage (background, bounds);
 
     g.saveState();
     Path clip;
     clip.addRoundedRectangle (bounds, cornerRadius);
     g.reduceClipRegion (clip);
+
+    // ---- drifting nebula (two layers at different speeds) ----
+    {
+        const float t = (float) clock;
+        const auto nebulaRect = [&] (float dx, float dy)
+        {
+            // whole physical pixels -> plain blits instead of resampling
+            dx = std::round (dx * imageScale) / imageScale;
+            dy = std::round (dy * imageScale) / imageScale;
+            return Rectangle<float> (-nebulaMargin + dx, -nebulaMargin + dy, w + 2.0f * nebulaMargin, h + 2.0f * nebulaMargin);
+        };
+        g.setOpacity (1.0f);
+        g.drawImage (nebulaFar, nebulaRect (std::sin (t * 0.031f) * 14.0f, std::cos (t * 0.023f) * 7.0f));
+        g.setOpacity (0.75f + 0.25f * jmin (1.0f, level * 6.0f));
+        g.drawImage (nebulaNear, nebulaRect (std::sin (t * 0.047f + 1.0f) * 26.0f, std::sin (t * 0.037f) * 11.0f));
+        g.setOpacity (1.0f);
+    }
 
     // ---- starfield (far + mid) ----
     for (const auto& s : stars)
@@ -441,8 +548,14 @@ void SpaceView::paint (Graphics& g)
             continue;
         const float tw = 0.55f + 0.45f * std::sin (s.phase);
         g.setColour (s.colour.withAlpha (s.brightness * tw * (s.layer == 0 ? 0.55f : 0.8f)));
-        g.fillEllipse (s.x - s.size * 0.5f, s.y - s.size * 0.5f, s.size, s.size);
+        if (s.layer == 0)
+            g.fillRect (s.x - s.size * 0.5f, s.y - s.size * 0.5f, s.size, s.size); // tiny: a rect is plenty
+        else
+            g.fillEllipse (s.x - s.size * 0.5f, s.y - s.size * 0.5f, s.size, s.size);
     }
+
+    g.setOpacity (1.0f);
+    g.drawImage (planet, bounds);
 
     // ---- comet ----
     if (comet.active)
@@ -488,12 +601,10 @@ void SpaceView::paint (Graphics& g)
     const auto pathL = tracePath (dispL);
     for (auto [path, colour] : { std::pair { &pathR, magenta }, std::pair { &pathL, cyan } })
     {
-        g.setColour (colour.withAlpha (0.07f * presence));
-        g.strokePath (*path, PathStrokeType (9.0f, PathStrokeType::curved, PathStrokeType::rounded));
-        g.setColour (colour.withAlpha (0.18f * presence));
-        g.strokePath (*path, PathStrokeType (4.0f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.setColour (colour.withAlpha (0.16f * presence));
+        g.strokePath (*path, PathStrokeType (5.5f, PathStrokeType::beveled, PathStrokeType::butt));
         g.setColour (colour.interpolatedWith (Colours::white, 0.35f).withAlpha (0.9f * presence));
-        g.strokePath (*path, PathStrokeType (1.5f, PathStrokeType::curved, PathStrokeType::rounded));
+        g.strokePath (*path, PathStrokeType (1.5f, PathStrokeType::beveled, PathStrokeType::butt));
     }
 
     // ---- supernova rings + particles ----
@@ -507,8 +618,11 @@ void SpaceView::paint (Graphics& g)
     for (const auto& pt : particles)
     {
         const float a = jlimit (0.0f, 1.0f, pt.life / pt.maxLife);
-        g.setColour (pt.colour.withAlpha (0.25f * a));
-        g.fillEllipse (Rectangle<float> (pt.size * 3.0f, pt.size * 3.0f).withCentre (pt.pos));
+        if (pt.size > 1.9f)
+        {
+            g.setColour (pt.colour.withAlpha (0.22f * a));
+            g.fillEllipse (Rectangle<float> (pt.size * 3.0f, pt.size * 3.0f).withCentre (pt.pos));
+        }
         g.setColour (pt.colour.withAlpha (0.95f * a));
         g.fillEllipse (Rectangle<float> (pt.size, pt.size).withCentre (pt.pos));
     }
@@ -542,9 +656,18 @@ void SpaceView::paint (Graphics& g)
     }
 
     g.restoreState();
+    g.setOpacity (1.0f);
     g.drawImage (overlay, bounds);
 
     // ---- HUD ----
+    if (hintAlpha > 0.01f)
+    {
+        const float pulse = 0.75f + 0.25f * std::sin ((float) clock * 2.0f);
+        g.setFont (aa::Fonts::uiBold (9.5f).withExtraKerningFactor (0.22f));
+        g.setColour (starWhite.withAlpha (0.5f * hintAlpha * pulse));
+        g.drawText (String (CharPointer_UTF8 ("PLAY A NOTE  \xc2\xb7  OR CLICK THE STARS")), Rectangle<float> (0.0f, h * 0.5f + 14.0f, w, 16.0f), Justification::centred);
+    }
+
     g.setFont (aa::Fonts::uiBold (9.5f).withExtraKerningFactor (0.14f));
     g.setColour (cyan.withAlpha (0.75f));
     const String voiceText = String (voices) + (voices == 1 ? " VOICE" : " VOICES");
