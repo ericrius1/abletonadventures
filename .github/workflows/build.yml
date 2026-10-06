@@ -88,16 +88,19 @@ jobs:
             PLUGINS=(dist/AdventurePack-Windows/VST3/*.vst3)
           fi
           failed=0
+          : > pluginval-summary.txt
           for p in "${PLUGINS[@]}"; do
             echo "::group::pluginval $(basename "$p")"
             if "$PV" --strictness-level 5 --timeout-ms 300000 --validate "$p"; then
-              echo "PASS $(basename "$p")"
+              echo "PASS $(basename "$p")" | tee -a pluginval-summary.txt
             else
               echo "::error::pluginval failed for $(basename "$p")"
+              echo "FAIL $(basename "$p")" | tee -a pluginval-summary.txt
               failed=1
             fi
             echo "::endgroup::"
           done
+          cat pluginval-summary.txt >> "$GITHUB_STEP_SUMMARY"
           exit $failed
 
       - uses: actions/upload-artifact@v4
@@ -105,6 +108,14 @@ jobs:
           name: AdventurePack-${{ matrix.name }}
           path: dist/AdventurePack-${{ matrix.name }}.zip
           if-no-files-found: error
+
+      - name: pluginval summary
+        if: always() && runner.os != 'Linux'
+        shell: bash
+        run: |
+          echo "==== PLUGINVAL SUMMARY ===="
+          cat pluginval-summary.txt 2> /dev/null || echo "(pluginval did not run)"
+          ls -la dist/*.zip
 
   release:
     name: Publish release
