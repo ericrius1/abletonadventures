@@ -54,6 +54,11 @@ namespace
 BounceStage::BounceStage (BoingProcessor& p) : processor (p)
 {
     setOpaque (false);
+
+    // Forget hits that queued up while the editor was closed.
+    BoingProcessor::Hit stale;
+    while (processor.hits.pop (stale)) {}
+
     setTooltip ("Every hit launches a ball - each landing is an echo. Click to drop a test ball.");
 }
 

@@ -17,19 +17,20 @@ namespace
 AudioProcessorValueTreeState::ParameterLayout BoingProcessor::createLayout()
 {
     P::Layout layout;
+    // Ordered so the first eight (Push's first bank) are the most playable.
     layout.add (P::floatParam ("time", "Drop Time", 40.0f, 1500.0f, 420.0f, P::Unit::ms, 300.0f));
-    layout.add (P::toggle ("sync", "Tempo Sync", false));
-    layout.add (P::choice ("division", "Division", aa::dsp::syncDivisionNames(), 8));
     layout.add (P::floatParam ("bounciness", "Bounciness", 30.0f, 95.0f, 74.0f, P::Unit::percent));
     layout.add (P::integer ("bounces", "Bounces", 2, boing::maxBounces, 12));
     layout.add (P::percent ("damping", "Damping", 30.0f));
-    layout.add (P::choice ("mode", "Mode", { "Bounce", "Rise", "Steady" }, 0));
     layout.add (P::floatParam ("tone", "Tone", -100.0f, 100.0f, -25.0f, P::Unit::percent));
-    layout.add (P::percent ("wobble", "Wobble", 10.0f));
     layout.add (P::percent ("spread", "Spread", 55.0f));
     layout.add (P::floatParam ("rethrow", "Re-throw", 0.0f, 85.0f, 0.0f, P::Unit::percent));
-    layout.add (P::percent ("duck", "Duck", 0.0f));
     layout.add (P::percent ("mix", "Mix", 35.0f));
+    layout.add (P::toggle ("sync", "Tempo Sync", false));
+    layout.add (P::choice ("division", "Division", aa::dsp::syncDivisionNames(), 8));
+    layout.add (P::choice ("mode", "Mode", { "Bounce", "Rise", "Steady" }, 0));
+    layout.add (P::percent ("wobble", "Wobble", 10.0f));
+    layout.add (P::percent ("duck", "Duck", 0.0f));
     return layout;
 }
 
