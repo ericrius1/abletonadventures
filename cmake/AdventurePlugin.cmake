@@ -91,6 +91,13 @@ function(adventure_add_plugin target)
 
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
         target_compile_options(${target} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wno-missing-field-initializers>)
+        # Let the linker drop unused JUCE code: noticeably smaller plugin binaries.
+        target_compile_options(${target} PUBLIC -ffunction-sections -fdata-sections)
+        if(APPLE)
+            target_link_options(${target} INTERFACE -Wl,-dead_strip)
+        else()
+            target_link_options(${target} INTERFACE -Wl,--gc-sections)
+        endif()
     endif()
 
     set_target_properties(${target} PROPERTIES FOLDER "Plugins/${target}")
