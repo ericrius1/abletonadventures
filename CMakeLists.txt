@@ -57,8 +57,11 @@ set(AA_PLUGINS
     CrystalCave
     Dandelion)
 
+# Plugins still being finished: only built when asked for explicitly with -DAA_ONLY=<Name>.
+set(AA_WIP_PLUGINS Stardust CritterKit Orrery Babble TapeDreams CrystalCave)
+
 foreach(plugin IN LISTS AA_PLUGINS)
-    if(AA_ONLY STREQUAL "" OR AA_ONLY STREQUAL plugin)
+    if((AA_ONLY STREQUAL "" AND NOT plugin IN_LIST AA_WIP_PLUGINS) OR AA_ONLY STREQUAL plugin)
         if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/plugins/${plugin}/CMakeLists.txt")
             add_subdirectory(plugins/${plugin})
         endif()
