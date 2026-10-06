@@ -22,12 +22,14 @@ HARNESS=${AA_HARNESS:-/home/user/build/tools/harness/aa_harness_artefacts/Releas
 PLUGINVAL=${AA_PLUGINVAL:-/home/user/tools/pluginval}
 OUT=${AA_OUT:-/home/user/out/$NAME}
 JOBS=${AA_JOBS:-2}
-export DISPLAY=${DISPLAY:-:99}
+# Each plugin gets its own virtual X display so parallel screenshot runs never overlap.
+DISPLAY_NUM=${AA_DISPLAY_NUM:-$(( $(printf '%s' "$NAME" | cksum | cut -d' ' -f1) % 400 + 100 ))}
+export DISPLAY=":$DISPLAY_NUM"
 
 mkdir -p "$OUT"
 
 ensure_display() {
-    if ! xdpyinfo -display "$DISPLAY" > /dev/null 2>&1 && ! pgrep -f "Xvfb $DISPLAY" > /dev/null; then
+    if ! pgrep -f "Xvfb $DISPLAY -screen" > /dev/null; then
         (Xvfb "$DISPLAY" -screen 0 2400x1600x24 -nolisten tcp > /dev/null 2>&1 &)
         sleep 1
     fi

@@ -54,7 +54,8 @@ set(AA_PLUGINS
     Boing
     Gremlin
     TapeDreams
-    CrystalCave)
+    CrystalCave
+    Dandelion)
 
 foreach(plugin IN LISTS AA_PLUGINS)
     if(AA_ONLY STREQUAL "" OR AA_ONLY STREQUAL plugin)

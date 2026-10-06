@@ -21,6 +21,8 @@ struct Options
     double seconds = 6.0, sampleRate = 48000.0, bpm = 120.0;
     int block = 512, width = 0;
     StringArray params;
+    String stateFile;
+    bool dumpState = false;
 };
 
 Options parse (const StringArray& args)
@@ -44,6 +46,8 @@ Options parse (const StringArray& args)
         else if (a == "--block") o.block = next().getIntValue();
         else if (a == "--width") o.width = next().getIntValue();
         else if (a == "--bpm") o.bpm = next().getDoubleValue();
+        else if (a == "--state") o.stateFile = next();
+        else if (a == "--dump-state") o.dumpState = true;
     }
     return o;
 }
@@ -215,6 +219,26 @@ std::unique_ptr<AudioPluginInstance> loadPlugin (AudioPluginFormatManager& fm, c
     return fm.createPluginInstance (*types[0], sr, block, error);
 }
 
+void applyState (AudioPluginInstance& plugin, const String& stateFile)
+{
+    if (stateFile.isEmpty())
+        return;
+    if (auto xml = parseXML (File (stateFile)))
+    {
+        // The hosted VST3 expects JUCE's host-side envelope around the plugin's own state blob.
+        MemoryBlock pluginData;
+        AudioProcessor::copyXmlToBinary (*xml, pluginData);
+        XmlElement envelope ("VST3PluginState");
+        envelope.createNewChildElement ("IComponent")->addTextElement (pluginData.toBase64Encoding());
+        MemoryBlock mb;
+        AudioProcessor::copyXmlToBinary (envelope, mb);
+        plugin.setStateInformation (mb.getData(), (int) mb.getSize());
+        std::cout << "  state loaded from " << stateFile << std::endl;
+    }
+    else
+        std::cout << "  !! could not parse " << stateFile << std::endl;
+}
+
 void applyParams (AudioPluginInstance& plugin, const StringArray& params)
 {
     for (auto& spec : params)
@@ -298,6 +322,7 @@ int runRender (const Options& o)
     plugin->setPlayHead (&playHead);
     plugin->setRateAndBufferSizeDetails (o.sampleRate, o.block);
     plugin->prepareToPlay (o.sampleRate, o.block);
+    applyState (*plugin, o.stateFile);
     applyParams (*plugin, o.params);
 
     SignalSource src;
@@ -325,16 +350,39 @@ int runRender (const Options& o)
             out.copyFrom (ch, (int) pos, buf, jmin (ch, plugin->getTotalNumOutputChannels() - 1), 0, n);
     }
 
+    if (o.dumpState)
+    {
+        MemoryBlock state;
+        plugin->getStateInformation (state);
+        if (auto envelope = AudioProcessor::getXmlFromBinary (state.getData(), (int) state.getSize()))
+            if (auto* comp = envelope->getChildByName ("IComponent"))
+            {
+                MemoryBlock inner;
+                inner.fromBase64Encoding (comp->getAllSubText());
+                if (auto xml = AudioProcessor::getXmlFromBinary (inner.getData(), (int) inner.getSize()))
+                {
+                    std::cout << "STATE " << xml->toString().substring (0, 1500) << std::endl;
+                    xml->writeTo (File (o.outPath).withFileExtension ("state.xml"));
+                }
+                else
+                    std::cout << "STATE (not JUCE xml, " << (int) inner.getSize() << " bytes)" << std::endl;
+            }
+    }
+
     plugin->releaseResources();
 
     File outFile (o.outPath);
     outFile.deleteFile();
     WavAudioFormat wav;
-    if (auto stream = outFile.createOutputStream())
+    std::unique_ptr<OutputStream> stream = outFile.createOutputStream();
+    if (stream != nullptr)
     {
-        auto writer = wav.createWriterFor (stream.release(), o.sampleRate, 2, 24, {}, 0);
+        auto writer = wav.createWriterFor (stream, AudioFormatWriterOptions().withSampleRate (o.sampleRate)
+                                                                              .withNumChannels (2)
+                                                                              .withBitsPerSample (24));
         if (writer != nullptr)
             writer->writeFromAudioSampleBuffer (out, 0, out.getNumSamples());
+        // writer (and the stream it owns) are closed here, finalising the WAV header
     }
 
     std::cout << "RESULT " << plugin->getName() << " " << stats.describe() << std::endl;
@@ -404,8 +452,9 @@ int runStress (const Options& o)
             int mismatches = 0;
             for (int i = 0; i < params.size(); ++i)
             {
-                if (params[i]->getName (40) == "Bypass")
-                    continue; // host-side parameter, not part of the plugin state
+                const auto pname = params[i]->getName (40);
+                if (pname == "Bypass" || pname.startsWith ("MIDI CC") || pname == "Program")
+                    continue; // host-side VST3 wrapper parameters (bypass, MIDI-CC emulation), not plugin state
                 const auto after = params[i]->getText (params[i]->getValue(), 64);
                 if (after != before[i])
                 {
@@ -502,6 +551,7 @@ public:
         setupBuses (*plugin);
         plugin->setRateAndBufferSizeDetails (o.sampleRate, o.block);
         plugin->prepareToPlay (o.sampleRate, o.block);
+        applyState (*plugin, o.stateFile);
         applyParams (*plugin, o.params);
 
         window = std::make_unique<DocumentWindow> ("harness", Colours::black, 0, true);
