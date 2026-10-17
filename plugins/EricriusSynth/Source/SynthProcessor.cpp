@@ -366,6 +366,8 @@ void SynthProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     meterL.prepare (sr);
     meterR.prepare (sr);
     firstBlock = true;
+    dcCoeff = std::exp (-aa::dsp::twoPi * 6.0f / sr);
+    dcInL = dcInR = dcOutL = dcOutR = 0.0f;
     if (MessageManager::getInstanceWithoutCreating() != nullptr
         && MessageManager::getInstance()->isThisTheMessageThread())
         syncTables();
@@ -440,6 +442,19 @@ void SynthProcessor::processBlock (AudioBuffer<float>& buffer, MidiBuffer& midi)
         {
             const int n = jmin (controlBlock, end - pos);
             engine.render (l.data(), r.data(), n);
+
+            // DC blocker: asymmetric warps (PWM, FM, flip) can leave an offset
+            for (int i = 0; i < n; ++i)
+            {
+                const float xl = l[(size_t) i], xr = r[(size_t) i];
+                dcOutL = xl - dcInL + dcCoeff * dcOutL;
+                dcOutR = xr - dcInR + dcCoeff * dcOutR;
+                dcInL = xl;
+                dcInR = xr;
+                l[(size_t) i] = dcOutL;
+                r[(size_t) i] = dcOutR;
+            }
+
             processFx (l.data(), r.data(), n);
 
             int w = scopeWrite.load (std::memory_order_relaxed);

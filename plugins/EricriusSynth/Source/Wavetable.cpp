@@ -2,6 +2,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <cmath>
+#include <complex>
 #include <cstring>
 
 using namespace juce;
@@ -51,17 +52,132 @@ namespace
 
     inline float sanitise (float x) noexcept { return std::isfinite (x) ? x : 0.0f; }
 
-    /** Catmull-Rom interpolation on a buffer; out-of-range indices read as zero. */
-    inline float cubicAt (const float* x, int n, double pos) noexcept
+    using cfloat = std::complex<float>;
+
+    /** cos / sin of 2 pi k / wtSize */
+    struct TrigTable
     {
-        const auto i = (int) std::floor (pos);
-        const auto f = (float) (pos - (double) i);
-        auto s = [x, n] (int k) { return (k >= 0 && k < n) ? x[k] : 0.0f; };
-        const float y0 = s (i - 1), y1 = s (i), y2 = s (i + 1), y3 = s (i + 2);
+        std::array<float, wtSize> c {}, s {};
+    };
+
+    const TrigTable& trigTable()
+    {
+        static const TrigTable table = []
+        {
+            TrigTable t;
+            for (int k = 0; k < wtSize; ++k)
+            {
+                t.c[(size_t) k] = (float) std::cos (MathConstants<double>::twoPi * k / wtSize);
+                t.s[(size_t) k] = (float) std::sin (MathConstants<double>::twoPi * k / wtSize);
+            }
+            return t;
+        }();
+        return table;
+    }
+
+    /** Levels from here up keep <= 8 harmonics (no roll-off needed): they are summed directly. */
+    constexpr int firstDirectLevel = 7;
+    static_assert ((firstDirectLevel - 1) % 2 == 0, "FFT levels are built in pairs");
+
+    /** Builds the band-limited levels of frames. Real signals are packed two per complex FFT
+        (x + iy), which halves the transform count compared with real-only transforms. */
+    class MipBuilder
+    {
+    public:
+        MipBuilder() : fft (fftOrder), a ((size_t) wtSize), b ((size_t) wtSize), acc ((size_t) wtSize) {}
+
+        /** Spectra (bins 0..maxHarmonic) of two real frames; y may be null. */
+        void forwardPair (const float* x, const float* y, cfloat* specX, cfloat* specY)
+        {
+            for (int n = 0; n < wtSize; ++n)
+                a[(size_t) n] = cfloat (x[n], y != nullptr ? y[n] : 0.0f);
+
+            fft.perform (a.data(), b.data(), false);
+
+            for (int k = 0; k <= maxHarmonic; ++k)
+            {
+                const cfloat zk = b[(size_t) k], zn = std::conj (b[(size_t) ((wtSize - k) & wtMask)]);
+                specX[k] = 0.5f * (zk + zn);
+                specY[k] = cfloat (0.0f, -0.5f) * (zk - zn);
+            }
+        }
+
+        /** Writes levels 1.. of one frame; dest (level) returns where (wtSize samples). */
+        template <typename Dest>
+        void buildLevels (const cfloat* spec, Dest&& dest)
+        {
+            const auto& gains = levelGains();
+
+            for (int la = 1; la < firstDirectLevel; la += 2)
+            {
+                const int lb = la + 1;
+                const int topA = topHarmonic (la), topB = topHarmonic (lb);
+                const auto& ga = gains[(size_t) la];
+                const auto& gb = gains[(size_t) lb];
+
+                std::fill (a.begin(), a.end(), cfloat());
+                for (int h = 1; h <= topA; ++h)
+                {
+                    const cfloat x = spec[h] * ga[(size_t) h];
+                    const cfloat y = h <= topB ? spec[h] * gb[(size_t) h] : cfloat();
+                    a[(size_t) h] = cfloat (x.real() - y.imag(), x.imag() + y.real());                  // x + iy
+                    a[(size_t) (wtSize - h)] = cfloat (x.real() + y.imag(), y.real() - x.imag());     // conj(x) + i conj(y)
+                }
+
+                fft.perform (a.data(), b.data(), true);
+
+                float* da = dest (la);
+                float* db = dest (lb);
+                for (int n = 0; n < wtSize; ++n)
+                {
+                    da[n] = b[(size_t) n].real();
+                    db[n] = b[(size_t) n].imag();
+                }
+            }
+
+            // the narrowest levels: add harmonics one at a time, storing each level as its band fills
+            const auto& trig = trigTable();
+            std::fill (acc.begin(), acc.end(), 0.0f);
+            int level = wtLevels - 1;
+            for (int h = 1; h <= topHarmonic (firstDirectLevel); ++h)
+            {
+                const float re = spec[h].real() * (2.0f / (float) wtSize);
+                const float im = spec[h].imag() * (2.0f / (float) wtSize);
+                for (int n = 0; n < wtSize; ++n)
+                {
+                    const auto idx = (size_t) ((h * n) & wtMask);
+                    acc[(size_t) n] += re * trig.c[idx] - im * trig.s[idx];
+                }
+
+                if (h == topHarmonic (level))
+                {
+                    std::copy (acc.begin(), acc.end(), dest (level));
+                    --level;
+                }
+            }
+        }
+
+    private:
+        dsp::FFT fft;
+        std::vector<cfloat> a, b;
+        std::vector<float> acc;
+    };
+
+    /** Catmull-Rom interpolation between y1 and y2. */
+    inline float catmullRom (float y0, float y1, float y2, float y3, float f) noexcept
+    {
         const float c1 = 0.5f * (y2 - y0);
         const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
         const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
         return ((c3 * f + c2) * f + c1) * f + y1;
+    }
+
+    /** Catmull-Rom read of a buffer at a fractional position; out-of-range samples read as zero. */
+    inline float cubicAt (const float* x, int n, double pos) noexcept
+    {
+        const auto i = (int) std::floor (pos);
+        auto s = [x, n] (int k) { return (k >= 0 && k < n) ? x[k] : 0.0f; };
+        return catmullRom (s (i - 1), s (i), s (i + 1), s (i + 2), (float) (pos - (double) i));
     }
 
     /** Resample one cycle of n samples to wtSize samples, treating the input as periodic. */
@@ -82,11 +198,7 @@ namespace
                 const double pos = j * step;
                 const int i = (int) pos;
                 const float f = (float) (pos - i);
-                const float y0 = src[(i - 1 + n) % n], y1 = src[i % n], y2 = src[(i + 1) % n], y3 = src[(i + 2) % n];
-                const float c1 = 0.5f * (y2 - y0);
-                const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
-                const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
-                dst[j] = ((c3 * f + c2) * f + c1) * f + y1;
+                dst[j] = catmullRom (src[(i - 1 + n) % n], src[i % n], src[(i + 1) % n], src[(i + 2) % n], f);
             }
             return;
         }
@@ -156,6 +268,22 @@ namespace
         return 0;
     }
 
+    /** True when the stream starts like an audio file we know (WAV, AIFF, FLAC, Ogg, MP3). This keeps
+        random data from being "decoded" by a permissive reader (MP3 frame sync search). */
+    bool looksLikeAudio (InputStream& in)
+    {
+        uint8 h[12] = {};
+        if (! in.setPosition (0) || in.read (h, 12) < 4)
+            return false;
+
+        auto is = [&h] (int offset, const char* tag) { return std::memcmp (h + offset, tag, 4) == 0; };
+        return ((is (0, "RIFF") || is (0, "RF64") || is (0, "BW64")) && is (8, "WAVE"))
+            || (is (0, "FORM") && (is (8, "AIFF") || is (8, "AIFC")))
+            || is (0, "fLaC") || is (0, "OggS")
+            || (h[0] == 'I' && h[1] == 'D' && h[2] == '3')
+            || (h[0] == 0xff && (h[1] & 0xe0) == 0xe0);
+    }
+
     /** Reads n samples mixed to mono (anything past the end reads as zero). */
     void readMono (AudioFormatReader& reader, int64 start, int n, float* dest)
     {
@@ -201,7 +329,7 @@ namespace
             return 0.0;
 
         int order = 1;
-        while ((1 << order) < 2 * n)
+        while ((1 << order) < n + maxLag + 2)   // enough zero padding for lags up to maxLag
             ++order;
 
         dsp::FFT fft (order);
@@ -338,13 +466,13 @@ namespace
         if (reader == nullptr)
             return fail ("Can't read that kind of file");
 
+        const double sampleRate = reader->sampleRate;
+        if (! (sampleRate >= 1000.0 && sampleRate <= 1.0e6) || reader->numChannels > 64)
+            return fail ("Can't read that kind of file");
+
         const int64 length = reader->lengthInSamples;
         if (length < 4 || reader->numChannels == 0)
             return fail ("That file is empty");
-
-        double sampleRate = reader->sampleRate;
-        if (! (sampleRate >= 1000.0 && sampleRate <= 1.0e6))
-            sampleRate = 44100.0;
 
         std::vector<float> frames;
         int numFrames = 0;
@@ -457,37 +585,22 @@ std::shared_ptr<Wavetable> Wavetable::fromFrames (const String& tableName, const
         dst[wtSize] = dst[0];
     }
 
-    // levels 1..: FFT once per frame, then one inverse transform per bandwidth
-    const auto& gains = levelGains();
-    dsp::FFT fft (fftOrder);
-    std::vector<float> spectrum ((size_t) wtSize * 2), work ((size_t) wtSize * 2);
+    // levels 1..: one forward transform per frame (two frames per complex FFT), then the bandwidths
+    MipBuilder mips;
+    std::vector<cfloat> specA ((size_t) maxHarmonic + 1), specB ((size_t) maxHarmonic + 1);
 
-    for (int f = 0; f < count; ++f)
+    for (int f = 0; f < count; f += 2)
     {
-        std::copy (frameData (0, f), frameData (0, f) + wtSize, spectrum.begin());
-        std::fill (spectrum.begin() + wtSize, spectrum.end(), 0.0f);
-        fft.performRealOnlyForwardTransform (spectrum.data(), true);
-
-        for (int level = 1; level < wtLevels; ++level)
-        {
-            const int top = topHarmonic (level);
-            const auto& g = gains[(size_t) level];
-
-            work[0] = work[1] = 0.0f;
-            for (int h = 1; h <= top; ++h)
-            {
-                work[(size_t) (2 * h)] = spectrum[(size_t) (2 * h)] * g[(size_t) h];
-                work[(size_t) (2 * h + 1)] = spectrum[(size_t) (2 * h + 1)] * g[(size_t) h];
-            }
-            std::fill (work.begin() + 2 * (top + 1), work.end(), 0.0f);
-
-            fft.performRealOnlyInverseTransform (work.data());
-
-            float* dst = frameData (level, f);
-            std::copy (work.begin(), work.begin() + wtSize, dst);
-            dst[wtSize] = dst[0];
-        }
+        const bool pair = f + 1 < count;
+        mips.forwardPair (frameData (0, f), pair ? frameData (0, f + 1) : nullptr, specA.data(), specB.data());
+        mips.buildLevels (specA.data(), [&] (int level) { return frameData (level, f); });
+        if (pair)
+            mips.buildLevels (specB.data(), [&] (int level) { return frameData (level, f + 1); });
     }
+
+    for (int level = 1; level < wtLevels; ++level)
+        for (int f = 0; f < count; ++f)
+            frameData (level, f)[wtSize] = frameData (level, f)[0];
 
     return table;
 }
@@ -577,8 +690,13 @@ WavetablePtr loadWavetableFile (const File& file, String* error)
     int clmFrameSize = 0;
     {
         FileInputStream in (file);
-        if (in.openedOk())
-            clmFrameSize = findClmFrameSize (in);
+        if (! in.openedOk() || ! looksLikeAudio (in))
+        {
+            if (error != nullptr)
+                *error = in.openedOk() && file.getSize() > 0 ? "Can't read that kind of file" : "That file is empty";
+            return nullptr;
+        }
+        clmFrameSize = findClmFrameSize (in);
     }
 
     AudioFormatManager formats;
@@ -599,6 +717,12 @@ WavetablePtr loadWavetableData (const void* data, size_t numBytes, const String&
     int clmFrameSize = 0;
     {
         MemoryInputStream in (data, numBytes, false);
+        if (! looksLikeAudio (in))
+        {
+            if (error != nullptr)
+                *error = "Can't read that kind of file";
+            return nullptr;
+        }
         clmFrameSize = findClmFrameSize (in);
     }
 

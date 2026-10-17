@@ -109,6 +109,15 @@ SynthEditor::SynthEditor (SynthProcessor& p)
     knobs.push_back (&volume);
 
     finishSetup();
+
+    // Reopen on the page that was showing last. ERS_UI_PAGE / ERS_UI_MODTAB let the test
+    // harness take screenshots of every page.
+    int startPage = proc.lastPage;
+    if (const char* e = std::getenv ("ERS_UI_PAGE"))
+        startPage = String (e).getIntValue();
+    if (const char* e = std::getenv ("ERS_UI_MODTAB"))
+        modulation.select (jlimit (0, 7, String (e).getIntValue()));
+    showPage ((Page) jlimit (0, 2, startPage));
 }
 
 SynthEditor::~SynthEditor() = default;
@@ -116,6 +125,7 @@ SynthEditor::~SynthEditor() = default;
 void SynthEditor::showPage (Page p)
 {
     page = p;
+    proc.lastPage = (int) p;
     const bool synth = p == Page::synth;
     for (auto& o : oscPanels)
         o->setVisible (synth);

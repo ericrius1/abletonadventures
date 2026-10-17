@@ -99,6 +99,10 @@ private:
     aa::dsp::PeakMeter meterL, meterR;
     float sr = 44100.0f;
     bool firstBlock = true;
+    float dcCoeff = 0.999f, dcInL = 0.0f, dcInR = 0.0f, dcOutL = 0.0f, dcOutR = 0.0f;
+
+public:
+    int lastPage = 0;   // editor page, remembered while the plugin is open
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SynthProcessor)
 };

@@ -263,8 +263,10 @@ private:
     int env;
     int dragging = -1, hover = -1;
     float dragStartValue = 0.0f, dragStartY = 0.0f;
+    void updateZoom();
     std::unique_ptr<ModKnob> attack, hold, decay, sustain, release;
     float liveLevel = 0.0f;
+    float zoom = 1.0f;   // horizontal zoom so short envelopes fill the graph (frozen while dragging)
 };
 
 /** Drawable LFO shape editor with a live playhead. */
@@ -316,9 +318,9 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     void refresh();
     void collectKnobs (std::vector<ModKnob*>& out);
+    void select (int tab);
 private:
     juce::Rectangle<float> tabArea (int i) const;
-    void select (int tab);
     SynthProcessor& proc;
     int selected = 0;   // 0..3 env, 4..7 lfo
     juce::OwnedArray<ModSourceHandle> handles;

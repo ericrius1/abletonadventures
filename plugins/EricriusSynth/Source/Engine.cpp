@@ -1143,7 +1143,7 @@ void Engine::renderVoice (Voice& v, float* outL, float* outR, int n) noexcept
     if (v.stealing)
         fade1 = jmax (0.0f, fade0 - seconds / 0.003f);
 
-    constexpr float voiceGain = 0.5f;
+    constexpr float voiceGain = 0.3f;   // headroom: a 4-note chord of full saws peaks around -6 dBFS
     for (int i = 0; i < n; ++i)
     {
         const float t = (float) (i + 1) / (float) n;

@@ -17,7 +17,7 @@ const FactoryTableInfo& getFactoryTableInfo (int index);
 juce::StringArray getFactoryTableNames();
 
 /** Builds the table (allocates, a few ms). Message thread or background thread only.
-    Index 0 is "Basic Shapes" (sine -> triangle -> saw -> square -> narrow pulse). */
+    Index 0 is "Origin Shapes" (sine -> triangle -> saw -> square -> narrow pulse). */
 WavetablePtr createFactoryTable (int index);
 
 //==============================================================================

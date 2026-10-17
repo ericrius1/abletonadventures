@@ -42,7 +42,7 @@ juce::String kindPrefix (Kind k)
         case Kind::phaser:     return "ph";
         case Kind::chorus:     return "ch";
         case Kind::delay:      return "dl";
-        case Kind::compressor: return "co";
+        case Kind::compressor: return "comp";
         case Kind::reverb:     return "rv";
         case Kind::eq:         return "eq";
         case Kind::filter:     return "ff";
@@ -94,7 +94,7 @@ std::vector<ParamSpec> buildSpecs()
     std::vector<ParamSpec> specs;
 
     auto add = [&specs] (Kind k, const char* idName, const char* name, const char* label, float min, float max,
-                         float def, U unit = U::none, float skew = noSkew, float step = 0.0f, bool mod = true)
+                         float def, U unit = U::none, float skew = aa::params::noSkew, float step = 0.0f, bool mod = true)
     {
         ParamSpec p;
         p.id = kindPrefix (k) + idName;
@@ -300,11 +300,32 @@ inline float sin2pi (float p) noexcept   // parabolic sin (2 pi p), p in [0, 1)
 
 inline float wrap01 (float p) noexcept { return p - std::floor (p); }
 
-/** Cubic soft limiter, saturating at +-level (used to keep feedback loops bounded). */
-inline float limit (float x, float level, float invLevel) noexcept
+/** Keeps feedback loops bounded: exactly linear below `knee` (clean repeats at normal levels), then a
+    smooth cubic shoulder that saturates at knee + range. */
+inline float guard (float x, float knee = 1.0f, float range = 1.0f) noexcept
 {
-    const float t = juce::jlimit (-1.5f, 1.5f, x * invLevel);
-    return level * (t - (4.0f / 27.0f) * t * t * t);
+    const float a = std::abs (x);
+    if (a <= knee)
+        return x;
+    const float u = std::min (1.5f, (a - knee) / range);
+    return std::copysign (knee + range * (u - (4.0f / 27.0f) * u * u * u), x);
+}
+
+/** Equal-power blend for effects whose wet is decorrelated from the dry (chorus, hyper). */
+inline void equalPowerGains (float mix, float& dry, float& wet) noexcept
+{
+    // cheap quarter-sine pair (error < 0.2 %)
+    const float t = ad::clamp01 (mix);
+    wet = sin2pi (0.25f * t);
+    dry = sin2pi (0.25f * (1.0f - t));
+}
+
+/** Keeps "dry + delayed loop" (flanger / phaser wet) at unity noise power for loop feedback f:
+    the impulse response is 1, 1, f, f^2 ... so its power is 2 + f^2 / (1 - f^2). */
+inline float combNorm (float f) noexcept
+{
+    const float f2 = std::min (0.99f, f * f);
+    return 1.0f / std::sqrt (2.0f + f2 / (1.0f - f2));
 }
 
 /** Send-style blend for delay / reverb: dry stays at unity up to 50 %, wet reaches unity at 50 %. */
@@ -455,7 +476,7 @@ struct Hyper final : Effect
 
         const float msToSamples = 0.001f * sr;
         const float detuneRatio = det * det * 0.0145f;   // peak pitch deviation, about +-25 cents at 100 %
-        const float norm = 1.0f / std::sqrt ((float) voices);
+        const float norm = std::sqrt (2.0f / (float) voices);   // equal-power pans: unity wet power
 
         float inc[maxVoices], amp[maxVoices], base[maxVoices];
         float gl[maxVoices], gld[maxVoices], gr[maxVoices], grd[maxVoices], sl[maxVoices], sld[maxVoices];
@@ -515,9 +536,10 @@ struct Hyper final : Effect
                 wr += gr[v] * src;
             }
 
-            const float m = mixL.next();
-            float ol = xl + m * (wl - xl);
-            float orr = xr + m * (wr - xr);
+            float dryGain, wetGain;
+            equalPowerGains (mixL.next(), dryGain, wetGain);
+            float ol = dryGain * xl + wetGain * wl;
+            float orr = dryGain * xr + wetGain * wr;
 
             // Dimension: mid -> high-pass -> allpass diffusers -> side.
             float x = dimHp.highpass (0.5f * (ol + orr));
@@ -601,7 +623,6 @@ struct Distortion final : Effect
             case sinFold:    return std::sin (x * (0.5f * ad::pi));
             case zeroSquare: return x >= 0.0f ? std::min (1.0f, x * x) : -std::min (1.0f, x * x);
             case asym:       return x >= 0.0f ? ad::softClip (x) : x / (1.0f - 4.0f * x);
-            case rectify:    return std::abs (ad::softClip (x));
             default:         return x;
         }
     }
@@ -657,6 +678,13 @@ struct Distortion final : Effect
                 }
                 s[0] = held[0];
                 s[1] = held[1];
+            }
+            else if (mode == rectify)
+            {
+                // Full-wave rectifier (octave up) with gentle drive; the DC blocker removes the offset.
+                const float rg = 1.0f + 3.0f * a;
+                for (auto& v : s)
+                    v = ad::softClip (std::abs (v) * rg);
             }
             else if (mode == bitcrush)
             {
@@ -746,7 +774,7 @@ struct Flanger final : Effect
         const float offset = stereo.next (p.get (iStereo)) / 360.0f;
         mix.next (p.unit (iMix));
 
-        Lerp dep (depth, n), fb (feedback, n), wet (mix, n);
+        Lerp dep (depth, n), fb (feedback, n), wet (mix, n), nrm (combNorm (feedback.prev), combNorm (feedback.cur), n);
         const float msToSamples = 0.001f * sr;
         float* io[2] = { l, r };
 
@@ -757,13 +785,13 @@ struct Flanger final : Effect
                 phase -= 1.0f;
 
             const float d = dep.next(), f = fb.next(), m = wet.next();
-            const float norm = 0.5f * (1.0f - 0.45f * std::abs (f));
+            const float norm = nrm.next();
             for (int ch = 0; ch < 2; ++ch)
             {
                 const float lfo = 0.5f + 0.5f * sin2pi (ch == 0 ? phase : wrap01 (phase + offset));
                 const float x = io[ch][i];
                 const float delayed = line[ch].read ((0.25f + 5.0f * d * lfo) * msToSamples);
-                line[ch].push (ad::undenormalise (limit (x + f * delayed, 2.5f, 0.4f)));
+                line[ch].push (ad::undenormalise (guard (x + f * delayed, 1.5f)));
                 io[ch][i] = x + m * ((x + delayed) * norm - x);
             }
         }
@@ -831,7 +859,7 @@ struct Phaser final : Effect
         const float offset = stereo.next (p.get (iStereo)) / 360.0f;
         mix.next (p.unit (iMix));
 
-        Lerp fb (feedback, n), wet (mix, n);
+        Lerp fb (feedback, n), wet (mix, n), nrm (combNorm (feedback.prev), combNorm (feedback.cur), n);
         const float maxHz = 0.45f * sr;
         float* io[2] = { l, r };
 
@@ -852,8 +880,7 @@ struct Phaser final : Effect
                 }
             }
 
-            const float f = fb.next(), m = wet.next();
-            const float norm = 0.5f * (1.0f - 0.4f * std::abs (f));
+            const float f = fb.next(), m = wet.next(), norm = nrm.next();
             const int count = std::max (stages, stageFade < 1.0f ? prevStages : 0);
 
             for (int ch = 0; ch < 2; ++ch)
@@ -873,7 +900,7 @@ struct Phaser final : Effect
                         tapOld = a;
                 }
                 const float ap = stageFade < 1.0f ? tapOld + stageFade * (tapNew - tapOld) : tapNew;
-                last[ch] = limit (ap, 2.0f, 0.5f);
+                last[ch] = guard (ap, 1.5f, 0.5f);
                 io[ch][i] = x + m * ((x + ap) * norm - x);
             }
 
@@ -952,18 +979,20 @@ struct Chorus final : Effect
             const float sC = sin2pi (wrap01 (phase + 0.5f)), sD = sin2pi (wrap01 (phase + 0.75f));
 
             float w[2];
-            w[0] = 0.65f * line[0].read (b + amp * sA) + 0.45f * line[1].read (1.17f * b + amp * sC);
-            w[1] = 0.65f * line[1].read (b + amp * sB) + 0.45f * line[0].read (1.17f * b + amp * sD);
+            w[0] = 0.82f * line[0].read (b + amp * sA) + 0.57f * line[1].read (1.17f * b + amp * sC);
+            w[1] = 0.82f * line[1].read (b + amp * sB) + 0.57f * line[0].read (1.17f * b + amp * sD);
 
             const float x[2] = { l[i], r[i] };
             for (int ch = 0; ch < 2; ++ch)
             {
                 w[ch] = lp[ch].process (hp[ch].process (w[ch]).hp).lp;
-                line[ch].push (ad::undenormalise (limit (x[ch] + f * w[ch], 2.0f, 0.5f)));
+                line[ch].push (ad::undenormalise (guard (x[ch] + f * w[ch])));
             }
 
-            l[i] = x[0] + m * (w[0] - x[0]);
-            r[i] = x[1] + m * (w[1] - x[1]);
+            float dryGain, wetGain;
+            equalPowerGains (m, dryGain, wetGain);
+            l[i] = dryGain * x[0] + wetGain * w[0];
+            r[i] = dryGain * x[1] + wetGain * w[1];
         }
     }
 };
@@ -1064,16 +1093,16 @@ struct Delay final : Effect
             switch (mode)
             {
                 case pingPong:
-                    line[0].push (ad::undenormalise (limit (mono + f * fr, 2.0f, 0.5f)));
-                    line[1].push (ad::undenormalise (limit (f * fl, 2.0f, 0.5f)));
+                    line[0].push (ad::undenormalise (guard (mono + f * fr)));
+                    line[1].push (ad::undenormalise (guard (f * fl)));
                     break;
                 case tapDelay:
-                    line[0].push (ad::undenormalise (limit (mono + f * fl, 2.0f, 0.5f)));
+                    line[0].push (ad::undenormalise (guard (mono + f * fl)));
                     line[1].push (0.0f);
                     break;
                 default:
-                    line[0].push (ad::undenormalise (limit (xl + f * fl, 2.0f, 0.5f)));
-                    line[1].push (ad::undenormalise (limit (xr + f * fr, 2.0f, 0.5f)));
+                    line[0].push (ad::undenormalise (guard (xl + f * fl)));
+                    line[1].push (ad::undenormalise (guard (xr + f * fr)));
                     break;
             }
 
@@ -1107,9 +1136,9 @@ struct Delay final : Effect
     Threshold and upward below Threshold - 18 dB, scaled by Amount - the familiar "OTT" style. */
 struct Compressor final : Effect
 {
-    const int iMode = idx ("coMode"), iThreshold = idx ("coThreshold"), iRatio = idx ("coRatio"),
-              iAttack = idx ("coAttack"), iRelease = idx ("coRelease"), iGain = idx ("coGain"),
-              iAmount = idx ("coAmount"), iMix = idx ("coMix");
+    const int iMode = idx ("compMode"), iThreshold = idx ("compThreshold"), iRatio = idx ("compRatio"),
+              iAttack = idx ("compAttack"), iRelease = idx ("compRelease"), iGain = idx ("compGain"),
+              iAmount = idx ("compAmount"), iMix = idx ("compMix");
 
     struct Detector
     {
@@ -1120,7 +1149,6 @@ struct Compressor final : Effect
     Detector single, bands[3];
     ad::Svf split1[2], low2[2], high2[2], split2[2], mid2[2], top2[2], lowAllpass[2];
     Smooth threshold, ratio, makeup, amount, mix;
-    float atkBase = 0.0f, relBase = 0.0f, lastAttack = -1.0f, lastRelease = -1.0f;
     float envRelease[4] {}, fadeStep = 0.001f, modeFade = 1.0f;
     int mode = 0, prevMode = 0;
     bool fresh = true;
@@ -1168,7 +1196,6 @@ struct Compressor final : Effect
         resetMultiband();
         modeFade = 1.0f;
         fresh = true;
-        lastAttack = lastRelease = -1.0f;
         for (auto* sm : { &threshold, &ratio, &makeup, &amount, &mix })
             sm->reset();
     }
@@ -1195,9 +1222,6 @@ struct Compressor final : Effect
         return std::min (24.0f, under * (1.0f - 1.0f / ratio)) * gate;
     }
 
-    /** Peak-hold envelope -> gain computer -> attack / release smoothing in dB. Returns the gain in dB. */
-    static float track (Detector& d, float peak, float envRel, float target (float), float atk, float rel) noexcept;
-
     void process (float* l, float* r, int n, const Params& p, const TempoInfo&) noexcept override
     {
         const int wantMode = juce::jlimit (0, 1, p.index (iMode));
@@ -1223,14 +1247,7 @@ struct Compressor final : Effect
         const float amt = amount.next (p.unit (iAmount));
         mix.next (p.unit (iMix));
 
-        const float attackMs = p.get (iAttack), releaseMs = p.get (iRelease);
-        if (attackMs != lastAttack || releaseMs != lastRelease)
-        {
-            lastAttack = attackMs;
-            lastRelease = releaseMs;
-            atkBase = attackMs * 0.001f;
-            relBase = releaseMs * 0.001f;
-        }
+        const float atkBase = p.get (iAttack) * 0.001f, relBase = p.get (iRelease) * 0.001f;
         float atk[4], rel[4];
         for (int b = 0; b < 3; ++b)
         {
@@ -1249,7 +1266,7 @@ struct Compressor final : Effect
         for (int i = 0; i < n; ++i)
         {
             const float xl = l[i], xr = r[i];
-            float sl = 0.0f, sr_ = 0.0f, ml = 0.0f, mr = 0.0f;
+            float sl = 0.0f, sR = 0.0f, ml = 0.0f, mr = 0.0f;
 
             if (runSingle)
             {
@@ -1260,7 +1277,7 @@ struct Compressor final : Effect
                 d.gainDb += (target < d.gainDb ? atk[3] : rel[3]) * (target - d.gainDb);
                 const float g = std::exp (d.gainDb * 0.11512925f);
                 sl = xl * g;
-                sr_ = xr * g;
+                sR = xr * g;
                 if (mode == 0)
                     maxReduction = std::max (maxReduction, -d.gainDb);
             }
@@ -1301,8 +1318,8 @@ struct Compressor final : Effect
             if (modeFade < 1.0f)
             {
                 const float t = modeFade;   // 0 = previous mode, 1 = current mode
-                const float curL = mode == 0 ? sl : ml, curR = mode == 0 ? sr_ : mr;
-                const float oldL = mode == 0 ? ml : sl, oldR = mode == 0 ? mr : sr_;
+                const float curL = mode == 0 ? sl : ml, curR = mode == 0 ? sR : mr;
+                const float oldL = mode == 0 ? ml : sl, oldR = mode == 0 ? mr : sR;
                 yl = oldL + t * (curL - oldL);
                 yr = oldR + t * (curR - oldR);
                 modeFade = std::min (1.0f, modeFade + fadeStep);
@@ -1310,7 +1327,7 @@ struct Compressor final : Effect
             else
             {
                 yl = mode == 0 ? sl : ml;
-                yr = mode == 0 ? sr_ : mr;
+                yr = mode == 0 ? sR : mr;
             }
 
             const float g = gain.next(), m = wet.next();

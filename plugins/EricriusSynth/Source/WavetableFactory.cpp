@@ -1,6 +1,7 @@
 #include "WavetableFactory.h"
 #include <aakit/dsp/Core.h>
 #include <juce_dsp/juce_dsp.h>
+#include <array>
 #include <cmath>
 #include <complex>
 
@@ -24,7 +25,11 @@ namespace
     //==============================================================================
     // Small shape helpers. Phase u is in cycles; every shape has period 1.
 
-    inline double frac (double x) { return x - std::floor (x); }
+    inline double frac (double x)   // x - floor (x), without a libm call
+    {
+        const double f = x - (double) (int64) x;
+        return f < 0.0 ? f + 1.0 : f;
+    }
     inline float saw (double u) { return (float) (2.0 * frac (u) - 1.0); }                 // rising ramp
     inline float sine (double u) { return (float) std::sin (twoPi * u); }
     inline float tri (double u)                                                           // sine-aligned
@@ -189,16 +194,17 @@ namespace
         float* frame (int f) { return frames.data() + (size_t) f * wtSize; }
         float pos (int f) const { return numFrames > 1 ? (float) f / (float) (numFrames - 1) : 0.0f; }
 
-        /** fn (p, t) -> sample, with p = table position 0..1 and t = phase 0..1. */
+        /** fn (p) returns the frame's shape as a function of phase t (0..1); p = table position 0..1.
+            Per-frame maths goes in fn, per-sample maths in the returned callable. */
         template <typename Fn>
-        void eachSample (Fn&& fn)
+        void eachFrame (Fn&& fn)
         {
             for (int f = 0; f < numFrames; ++f)
             {
-                const float p = pos (f);
+                const auto shape = fn (pos (f));
                 float* out = frame (f);
                 for (int i = 0; i < wtSize; ++i)
-                    out[i] = fn (p, (double) i / (double) wtSize);
+                    out[i] = shape ((double) i / (double) wtSize);
             }
         }
 
@@ -225,26 +231,31 @@ namespace
     void basicShapes (Builder& b)
     {
         // sine -> triangle -> saw -> square -> narrow pulse; 65 frames put every key exactly on a frame
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const auto s = segment (p, 5);
-            const float q = s.t;
-            switch (s.index)
+            const double q = s.t;
+            const double apex = 0.5 + 0.5 * q, duty = 0.5 * std::pow (0.1, q);
+            return [s, q, apex, duty] (double t)
             {
-                case 0:  return lerpf (sine (t), tri (t), q);
-                case 1:  { const double r = 0.5 + 0.5 * q; return skewTri (t + 0.5 * r, r); }
-                case 2:  { const double u = t + 0.5; return saw (u) - q * saw (u + 0.5); }
-                default: { const double u = t + 0.5; return saw (u) - saw (u + 0.5 * std::pow (0.1, (double) q)); }
-            }
+                const double u = t + 0.5;
+                switch (s.index)
+                {
+                    case 0:  return lerpf (sine (t), tri (t), (float) q);
+                    case 1:  return skewTri (t + 0.5 * apex, apex);
+                    case 2:  return saw (u) - (float) q * saw (u + 0.5);
+                    default: return saw (u) - saw (u + duty);
+                }
+            };
         });
     }
 
     void pulseWidth (Builder& b)
     {
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const double duty = 0.5 * std::pow (0.04, (double) p);   // 50% -> 2%
-            return pulse (t, duty);
+            return [duty] (double t) { return pulse (t, duty); };
         });
     }
 
@@ -285,31 +296,37 @@ namespace
     void sawSwarm (Builder& b)
     {
         // seven saws drifting against each other at whole-cycle rates: the last frame wraps to the first
-        Rng rng (0x5A3517u);
-        constexpr int voices = 7;
+        static constexpr int voices = 7;
         const int rates[voices] = { 0, 1, -1, 2, -2, 3, -3 };
         const float gains[voices] = { 1.0f, 0.85f, 0.85f, 0.7f, 0.7f, 0.55f, 0.55f };
         double offsets[voices];
+        Rng rng (0x5A3517u);
         for (auto& o : offsets)
             o = rng.next01();
 
-        b.eachSample ([&] (float p, double t)
+        b.eachFrame ([&] (float p)
         {
-            float sum = 0.0f;
+            std::array<double, voices> shift {};
             for (int v = 0; v < voices; ++v)
-                sum += gains[v] * saw (t + offsets[v] + rates[v] * (double) p);
-            return sum;
+                shift[(size_t) v] = offsets[v] + rates[v] * (double) p;
+
+            return [shift, &gains] (double t)
+            {
+                float sum = 0.0f;
+                for (int v = 0; v < voices; ++v)
+                    sum += gains[v] * saw (t + shift[(size_t) v]);
+                return sum;
+            };
         });
     }
 
     void syncSweep (Builder& b)
     {
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const double ratio = std::pow (8.0, (double) p);   // slave 1x -> 8x
-            const double ph = t * ratio;
-            // fade the slave's level a touch with the master phase, like a soft window
-            return saw (ph) * (float) (1.0 - 0.25 * p * t);
+            const double window = 0.25 * p;                     // the slave fades a touch over the master cycle
+            return [ratio, window] (double t) { return saw (t * ratio) * (float) (1.0 - window * t); };
         });
     }
 
@@ -317,10 +334,10 @@ namespace
     {
         b.eachSpectrum ([] (float p, Additive& a)
         {
-            const double cutoff = expMap (1.2f, 260.0f, p);
+            const double cutoff = expMap (1.5f, 260.0f, p);
             for (int h = 1; h < maxH; ++h)
             {
-                const auto c = cdouble (sawHarmonic (h)) * ladderResponse ((double) h / cutoff, 3.3);
+                const auto c = cdouble (sawHarmonic (h)) * ladderResponse ((double) h / cutoff, 3.0);
                 if (std::abs (c) < 1.0e-7)
                     break;
                 a.coef[(size_t) h] = cfloat ((float) c.real(), (float) c.imag());
@@ -330,11 +347,11 @@ namespace
 
     void westFold (Builder& b)
     {
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
-            const float gain = 1.0f + 6.0f * std::pow (p, 1.3f);
+            const float gain = 0.95f * (1.0f + 6.0f * std::pow (p, 1.3f));
             const float bias = 0.22f * p;
-            return fold (gain * (sine (t) + bias) * 0.95f);
+            return [gain, bias] (double t) { return fold (gain * (sine (t) + bias)); };
         });
     }
 
@@ -359,73 +376,78 @@ namespace
     void phaseRes (Builder& b)
     {
         // phase-distortion style resonance: a cosine burst under a falling ramp window
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const double ratio = std::pow (16.0, (double) p);
-            return (float) ((1.0 - t) * (0.5 - 0.5 * std::cos (twoPi * ratio * t)));
+            return [ratio] (double t) { return (float) ((1.0 - t) * (0.5 - 0.5 * std::cos (twoPi * ratio * t))); };
         });
     }
 
     void bitCrush (Builder& b)
     {
         // fewer amplitude levels and fewer steps per cycle at the same time, blended between integers
-        auto quant = [] (float x, float levels)
-        {
-            const float half = levels * 0.5f;
-            return std::round (x * half) / half;
-        };
-
-        b.eachSample ([&] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const float levels = std::pow (2.0f, 6.0f - 4.8f * p);
             const float steps = std::pow (2.0f, 9.0f - 5.5f * p);
             const float l0 = std::floor (levels), lw = levels - l0;
             const float s0 = std::floor (steps), sw = steps - s0;
 
-            auto held = [&] (float s)
+            return [l0, lw, s0, sw] (double t)
             {
-                const double u = std::floor (t * s) / s;
-                return sine (u) * 0.8f + 0.2f * sine (2.0 * u + 0.1);
-            };
+                auto quant = [] (float x, float numLevels)
+                {
+                    const float half = numLevels * 0.5f;
+                    return std::round (x * half) / half;
+                };
+                auto held = [t] (float numSteps)
+                {
+                    const double u = std::floor (t * numSteps) / numSteps;
+                    return sine (u) * 0.8f + 0.2f * sine (2.0 * u + 0.1);
+                };
 
-            const float h0 = held (s0), h1 = held (s0 + 1.0f);
-            const float a = lerpf (quant (h0, l0), quant (h0, l0 + 1.0f), lw);
-            const float c = lerpf (quant (h1, l0), quant (h1, l0 + 1.0f), lw);
-            return lerpf (a, c, sw);
+                const float h0 = held (s0), h1 = held (s0 + 1.0f);
+                const float a = lerpf (quant (h0, l0), quant (h0, l0 + 1.0f), lw);
+                const float c = lerpf (quant (h1, l0), quant (h1, l0 + 1.0f), lw);
+                return lerpf (a, c, sw);
+            };
         });
+    }
+
+    float chipKey (int k, double t)
+    {
+        switch (k)
+        {
+            case 0:  return std::floor ((tri (t) * 0.5f + 0.5f) * 15.999f) / 7.5f - 1.0f;   // 4-bit triangle
+            case 1:  return pulse (t, 0.5);
+            case 2:  return pulse (t, 0.25);
+            case 3:  return pulse (t, 0.125);
+            default: return (float) std::floor (frac (t) * 16.0) / 7.5f - 1.0f;           // 4-bit saw
+        }
     }
 
     void chipPulses (Builder& b)
     {
         // 4-bit triangle -> 50% -> 25% -> 12.5% -> 4-bit saw, parked on each key
-        auto key = [] (int k, double t) -> float
-        {
-            switch (k)
-            {
-                case 0:  return std::floor ((tri (t) * 0.5f + 0.5f) * 15.999f) / 7.5f - 1.0f;
-                case 1:  return pulse (t, 0.5);
-                case 2:  return pulse (t, 0.25);
-                case 3:  return pulse (t, 0.125);
-                default: return (float) std::floor (frac (t) * 16.0) / 7.5f - 1.0f;
-            }
-        };
-
-        b.eachSample ([&] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const auto s = segment (p, 5, 0.25f);
-            return lerpf (key (s.index, t), key (s.index + 1, t), s.t);
+            return [s] (double t) { return lerpf (chipKey (s.index, t), chipKey (s.index + 1, t), s.t); };
         });
     }
 
     void ringSweep (Builder& b)
     {
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const float ratio = 2.0f + 14.0f * p;
             const float r0 = std::floor (ratio), w = ratio - r0;
             const float depth = 0.4f + 0.6f * p;
-            auto ring = [&] (float r) { return sine (t) * ((1.0f - depth) + depth * sine (r * t)); };
-            return lerpf (ring (r0), ring (r0 + 1.0f), w);
+            return [r0, w, depth] (double t)
+            {
+                auto ring = [t, depth] (float r) { return sine (t) * ((1.0f - depth) + depth * sine (r * t)); };
+                return lerpf (ring (r0), ring (r0 + 1.0f), w);
+            };
         });
     }
 
@@ -530,10 +552,10 @@ namespace
     void combFlange (Builder& b)
     {
         // a saw plus a delayed copy of itself; the delay shrinks, so the comb teeth spread upward
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
-            const double delay = 0.5 * std::pow (1.0 / 48.0, (double) p);
-            return saw (t) + 0.85f * saw (t + delay);
+            const double delay = 0.5 * std::pow (1.0 / 16.0, (double) p);
+            return [delay] (double t) { return saw (t) + 0.85f * saw (t + delay); };
         });
     }
 
@@ -576,7 +598,7 @@ namespace
     {
         // sparse partials whose levels glide between random constellations (cyclic: the end meets the start)
         Rng rng (0x9215Bu);
-        constexpr int numPartials = 28, numKeys = 5;
+        constexpr int numPartials = 20, numKeys = 5;
         int harmonics[numPartials];
         float phases[numPartials];
         float levels[numKeys][numPartials];
@@ -587,7 +609,7 @@ namespace
             while (! unique)
             {
                 const float r = rng.next01();
-                harmonics[i] = 2 + (int) (r * r * 110.0f);
+                harmonics[i] = 2 + (int) (r * r * 54.0f);
                 unique = true;
                 for (int j = 0; j < i; ++j)
                     unique = unique && harmonics[j] != harmonics[i];
@@ -597,7 +619,7 @@ namespace
 
         for (int k = 0; k < numKeys - 1; ++k)
             for (int i = 0; i < numPartials; ++i)
-                levels[k][i] = rng.chance (0.45f) ? 0.0f : rng.next01() / std::pow ((float) harmonics[i], 0.35f);
+                levels[k][i] = rng.chance (0.35f) ? 0.0f : (0.25f + 0.75f * rng.next01()) / std::pow ((float) harmonics[i], 0.7f);
         for (int i = 0; i < numPartials; ++i)
             levels[numKeys - 1][i] = levels[0][i];
 
@@ -605,7 +627,7 @@ namespace
         {
             const auto s = segment (p, numKeys);
             const float w = smooth01 (s.t);
-            a.set (1, 0.6f, 0.0f);
+            a.set (1, 0.7f, 0.0f);
             for (int i = 0; i < numPartials; ++i)
                 a.coef[(size_t) harmonics[i]] += std::polar (lerpf (levels[s.index][i], levels[s.index + 1][i], w),
                                                              phases[i]);
@@ -617,22 +639,25 @@ namespace
 
     void fmBloom (Builder& b)
     {
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const double index = 7.0 * std::pow ((double) p, 1.5);
-            return (float) std::sin (twoPi * t + index * std::sin (twoPi * t));
+            return [index] (double t) { return (float) std::sin (twoPi * t + index * std::sin (twoPi * t)); };
         });
     }
 
     void fmRatioWalk (Builder& b)
     {
         // carrier 1 with the modulator walking through ratios 1..8
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const auto s = segment (p, 8, 0.2f);
             const double index = 1.8 + 0.8 * std::sin (pi * p);
-            auto fm = [&] (int ratio) { return (float) std::sin (twoPi * t + index * std::sin (twoPi * ratio * t)); };
-            return lerpf (fm (s.index + 1), fm (s.index + 2), s.t);
+            return [s, index] (double t)
+            {
+                auto fm = [t, index] (int ratio) { return (float) std::sin (twoPi * t + index * std::sin (twoPi * ratio * t)); };
+                return lerpf (fm (s.index + 1), fm (s.index + 2), s.t);
+            };
         });
     }
 
@@ -660,11 +685,13 @@ namespace
     void fmBell (Builder& b)
     {
         // carrier on harmonic 2, modulator on 7, plus a hum an octave below: bell-like half-integer partials
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const double index = 4.0 * p;
-            return (float) (std::sin (twoPi * 2.0 * t + index * std::sin (twoPi * 7.0 * t))
-                            + 0.45 * std::sin (twoPi * t));
+            return [index] (double t)
+            {
+                return (float) (std::sin (twoPi * 2.0 * t + index * std::sin (twoPi * 7.0 * t)) + 0.45 * std::sin (twoPi * t));
+            };
         });
     }
 
@@ -673,12 +700,12 @@ namespace
 
     void subWeight (Builder& b)
     {
-        b.eachSample ([] (float p, double t)
+        // a sine pushed into soft saturation, with a little even harmonic for weight
+        b.eachFrame ([] (float p)
         {
             const float drive = expMap (0.4f, 10.0f, p);
             const float even = 0.3f * p;
-            const float x = sine (t) + even * (float) std::sin (2.0 * twoPi * t + 1.0);
-            return std::tanh (drive * x);
+            return [drive, even] (double t) { return std::tanh (drive * (sine (t) + even * sine (2.0 * t + 0.16))); };
         });
     }
 
@@ -713,22 +740,25 @@ namespace
     void reeseCycle (Builder& b)
     {
         // detuned saws baked across the table: one full beat cycle, so it loops end -> start
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
-            return saw (t) + saw (t + p) + 0.5f * saw (t - 2.0 * p + 0.25);
+            return [p] (double t) { return saw (t) + saw (t + p) + 0.5f * saw (t - 2.0 * p + 0.25); };
         });
     }
 
     void fmGrowl (Builder& b)
     {
         // three-operator stack (1 <- 2 <- 1) with both indices moving
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const double i1 = 0.3 + 3.7 * std::pow ((double) p, 0.8);
             const double s2 = std::sin (1.5 * pi * p);
             const double i2 = 3.0 * s2 * s2;
-            const double mod = std::sin (twoPi * 2.0 * t + i2 * std::sin (twoPi * t));
-            return (float) (std::sin (twoPi * t + i1 * mod) + 0.35 * std::sin (twoPi * t));
+            return [i1, i2] (double t)
+            {
+                const double mod = std::sin (twoPi * 2.0 * t + i2 * std::sin (twoPi * t));
+                return (float) (std::sin (twoPi * t + i1 * mod) + 0.35 * std::sin (twoPi * t));
+            };
         });
     }
 
@@ -737,13 +767,20 @@ namespace
 
     void tineKeys (Builder& b)
     {
-        // electric-piano pickup: an offset tine through a soft asymmetric curve, mellow -> bark
-        b.eachSample ([] (float p, double t)
+        // electric-piano-like: a tine (fundamental + a little octave) with bell partials that grow,
+        // through an offset magnetic-pickup curve that adds bark: mellow -> struck hard
+        b.eachFrame ([] (float p)
         {
-            const float g = 0.5f + 4.0f * std::pow (p, 1.3f);
-            const float y = sine (t) + 0.08f * sine (2.0 * t);
-            constexpr float offset = 0.35f;
-            return std::tanh (g * (y + offset)) - std::tanh (g * offset);
+            const float bell = 0.55f * std::pow (p, 1.4f);
+            const float g = 0.3f + 2.9f * p;
+            return [bell, g] (double t)
+            {
+                const float y = sine (t) + 0.1f * sine (2.0 * t + 0.25)
+                              + bell * (0.35f * sine (7.0 * t) + 0.18f * sine (14.0 * t + 0.3));
+                constexpr float offset = 0.45f;
+                const float v = g * (y + offset), v0 = g * offset;
+                return v / std::sqrt (v * v + 1.0f) - v0 / std::sqrt (v0 * v0 + 1.0f);
+            };
         });
     }
 
@@ -824,7 +861,7 @@ namespace
         // saw with violin-ish body resonances (nominal 196 Hz) under an opening bow brightness
         b.eachSpectrum ([] (float p, Additive& a)
         {
-            const float cutoff = expMap (2.5f, 70.0f, p);
+            const float cutoff = expMap (1.5f, 60.0f, p);
             for (int h = 1; h < 600; ++h)
             {
                 const float f = 196.0f * (float) h;
@@ -833,7 +870,7 @@ namespace
                                    + 0.8f * bump (lf, std::log2 (520.0f), 0.2f)
                                    + 1.0f * bump (lf, std::log2 (2900.0f), 0.45f);
                 const float w = (float) h / cutoff;
-                const float lp = 1.0f / std::sqrt (1.0f + w * w * w * w);
+                const float lp = 1.0f / (1.0f + w * w * w * w);
                 a.coef[(size_t) h] = sawHarmonic (h) * (body * lp);
             }
         });
@@ -845,41 +882,48 @@ namespace
     void mangleOrbit (Builder& b)
     {
         // nested phase modulation whose depths orbit around (loops end -> start)
-        b.eachSample ([] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const double a = 2.0 + 1.5 * std::sin (twoPi * p);
             const double c = 1.5 + 1.5 * std::sin (twoPi * 2.0 * p + 1.0);
             const double d = 2.0 * (1.0 - std::cos (twoPi * p));
-            const double inner = std::sin (twoPi * 5.0 * t + twoPi * p);
-            const double mid = std::sin (twoPi * 3.0 * t + c * inner);
-            return (float) (std::sin (twoPi * t + a * mid) + 0.4 * std::sin (twoPi * 2.0 * t + d * std::sin (twoPi * t)));
+            const double spin = p;
+            return [a, c, d, spin] (double t)
+            {
+                const double inner = std::sin (twoPi * (5.0 * t + spin));
+                const double mid = std::sin (twoPi * 3.0 * t + c * inner);
+                return (float) (std::sin (twoPi * t + a * mid) + 0.4 * std::sin (twoPi * 2.0 * t + d * std::sin (twoPi * t)));
+            };
         });
+    }
+
+    int bytePattern (int which, int k)
+    {
+        switch (which)
+        {
+            case 0:  return k;
+            case 1:  return k ^ (k >> 2);
+            case 2:  return (k * 3) & (k >> 1 | 0x55);
+            case 3:  return (k | (k >> 3)) * 2;
+            case 4:  return k ^ ((k * 5) >> 3);
+            case 5:  return (k * (k >> 4)) ^ 0x80;
+            default: return (k >> 1) ^ (k << 2) ^ (k >> 5);
+        }
     }
 
     void byteLogic (Builder& b)
     {
         // 8-bit integer logic on a 256-step cycle, blended from pattern to pattern
-        auto pattern = [] (int which, int k) -> int
-        {
-            switch (which)
-            {
-                case 0:  return k;
-                case 1:  return k ^ (k >> 2);
-                case 2:  return (k * 3) & (k >> 1 | 0x55);
-                case 3:  return (k | (k >> 3)) * 2;
-                case 4:  return k ^ ((k * 5) >> 3);
-                case 5:  return (k * (k >> 4)) ^ 0x80;
-                default: return (k >> 1) ^ (k << 2) ^ (k >> 5);
-            }
-        };
-
-        b.eachSample ([&] (float p, double t)
+        b.eachFrame ([] (float p)
         {
             const auto s = segment (p, 7, 0.2f);
-            const int k = jlimit (0, 255, (int) (t * 256.0));
-            const float a = (float) (pattern (s.index, k) & 255) / 127.5f - 1.0f;
-            const float c = (float) (pattern (s.index + 1, k) & 255) / 127.5f - 1.0f;
-            return lerpf (a, c, s.t);
+            return [s] (double t)
+            {
+                const int k = jlimit (0, 255, (int) (t * 256.0));
+                const float a = (float) (bytePattern (s.index, k) & 255) / 127.5f - 1.0f;
+                const float c = (float) (bytePattern (s.index + 1, k) & 255) / 127.5f - 1.0f;
+                return lerpf (a, c, s.t);
+            };
         });
     }
 
@@ -926,16 +970,16 @@ namespace
     };
 
     const TableDef tableDefs[] = {
-        { "Basic Shapes",     "Basic",       65,  basicShapes,    true },
+        { "Origin Shapes",     "Basic",       65,  basicShapes,    true },
         { "Pulse Width",      "Basic",       64,  pulseWidth,     true },
         { "Harmonic Ladder",  "Basic",       64,  harmonicLadder, true },
         { "Hollow Fade",      "Basic",       64,  hollowFade,     true },
         { "Saw Swarm",        "Analog",      256, sawSwarm,       true },
-        { "Sync Sweep",       "Analog",      64,  syncSweep,      true },
-        { "Resonant Sweep",   "Analog",      64,  resonantSweep,  true },
+        { "Sync Sweep",       "Analog",      256, syncSweep,      true },
+        { "Resonant Sweep",   "Analog",      128, resonantSweep,  true },
         { "West Fold",        "Analog",      64,  westFold,       true },
         { "Vintage Pulse",    "Analog",      64,  vintagePulse,   true },
-        { "Phase Res",        "Digital",     64,  phaseRes,       true },
+        { "Phase Res",        "Digital",     128, phaseRes,       true },
         { "Bit Crush",        "Digital",     64,  bitCrush,       true },
         { "Chip Pulses",      "Digital",     64,  chipPulses,     true },
         { "Ring Sweep",       "Digital",     64,  ringSweep,      true },
@@ -1044,23 +1088,29 @@ namespace
         x.resize ((size_t) loopLength);
     }
 
-    void normaliseLoop (NoiseSource& n, float rmsTarget = 0.25f, float peakLimit = 0.95f)
+    /** Scales a loop to an RMS target (default -12 dBFS), then soft-limits the rare peaks above
+        0.6 so nothing passes 0.95. */
+    void normaliseLoop (NoiseSource& n, float rmsTarget = 0.25f)
     {
         double sum = 0.0;
-        float peak = 0.0f;
         for (auto* ch : { &n.left, &n.right })
             for (auto v : *ch)
-            {
                 sum += (double) v * v;
-                peak = jmax (peak, std::abs (v));
-            }
 
         const auto rms = (float) std::sqrt (sum / (double) (n.left.size() + n.right.size()));
         if (rms < 1.0e-9f)
             return;
-        const float gain = jmin (rmsTarget / rms, peakLimit / peak);
+
+        constexpr float knee = 0.6f, ceiling = 0.95f;
+        const float gain = rmsTarget / rms;
         for (auto* ch : { &n.left, &n.right })
-            FloatVectorOperations::multiply (ch->data(), gain, (int) ch->size());
+            for (auto& v : *ch)
+            {
+                v *= gain;
+                const float a = std::abs (v);
+                if (a > knee)
+                    v = std::copysign (knee + (ceiling - knee) * std::tanh ((a - knee) / (ceiling - knee)), v);
+            }
     }
 
     void normalisePeak (NoiseSource& n, float target = 0.9f)
@@ -1196,7 +1246,7 @@ namespace
                 v = click + hiss + rumble;
             }
         });
-        normaliseLoop (*n, 0.12f, 0.95f);
+        normaliseLoop (*n, 0.1f);
         return n;
     }
 
@@ -1245,10 +1295,10 @@ namespace
                 gain[k] = (1.0f - r) * (0.6f + 0.8f * shape.next01());
             }
 
-            for (auto& v : x)
+            for (int i = -2 * (int) noiseRate; i < (int) x.size(); ++i)     // 2 s pre-roll: start ringing
             {
                 float excite = 0.02f * gauss (rng);
-                if (rng.chance (9.0f / noiseRate))
+                if (rng.chance (14.0f / noiseRate))
                     excite += (rng.nextBipolar() > 0 ? 1.0f : -1.0f) * (0.5f + 2.0f * rng.next01()) * 40.0f;
 
                 float sum = 0.0f;
@@ -1259,7 +1309,8 @@ namespace
                     y1[k] = y;
                     sum += y;
                 }
-                v = sum;
+                if (i >= 0)
+                    x[(size_t) i] = sum;
             }
         });
         normaliseLoop (*n);
@@ -1282,7 +1333,7 @@ namespace
                 if ((i & 15) == 0)
                     band.setCutoffRes (expMap (220.0f, 3200.0f, s), 0.45f, noiseRate);
                 const float white = gauss (rng);
-                x[i] = band.bandpass (white) * (0.25f + 0.9f * g * g) + rumble.lowpass (pink.process (white)) * 0.6f;
+                x[i] = band.bandpass (white) * (0.25f + 0.9f * g * g) + rumble.lowpass (pink.process (white)) * 0.3f;
             }
         });
         normaliseLoop (*n);
@@ -1314,44 +1365,44 @@ namespace
     {
         auto n = makeLoop ("Rain", 0x100Au, [] (int channel, Rng& rng, std::vector<float>& x)
         {
-            struct Drop { float phase, freq, rise, amp, decay; };
+            // droplets: short decaying resonances (same drops on both sides, panned) over a soft hiss bed
+            struct Drop { float y1, y2, c1, c2; };
             std::vector<Drop> drops;
-            drops.reserve (64);
-            Rng events (0xDA1Bu);   // same drops on both sides, panned
-            aa::dsp::OnePole hissHp;
+            drops.reserve (128);
+            Rng events (0xDA1Bu);
+            aa::dsp::OnePole hissHp, bedLp;
             hissHp.setCutoff (1800.0f, noiseRate);
-            PinkFilter pink;
-            aa::dsp::OnePole bedLp;
             bedLp.setCutoff (900.0f, noiseRate);
+            PinkFilter pink;
 
-            for (auto& v : x)
+            for (size_t i = 0; i < x.size(); ++i)
             {
-                if (events.chance (380.0f / noiseRate) && drops.size() < 64)
+                if (events.chance (380.0f / noiseRate))
                 {
                     const float u = events.next01(), pan = events.next01();
-                    Drop d;
-                    d.phase = 0.0f;
-                    d.freq = expMap (1400.0f, 7000.0f, events.next01()) / noiseRate;
-                    d.rise = 1.0f + 0.00004f * events.next01();
-                    d.amp = (0.04f + 0.6f * u * u * u) * (channel == 0 ? std::sqrt (1.0f - pan) : std::sqrt (pan));
-                    d.decay = std::exp (-1.0f / (noiseRate * (0.002f + 0.01f * events.next01())));
-                    drops.push_back (d);
+                    const float w = 2.0f * pi * expMap (1400.0f, 7000.0f, events.next01()) / noiseRate;
+                    const float r = std::exp (-1.0f / (noiseRate * (0.002f + 0.01f * events.next01())));
+                    const float amp = (0.04f + 0.6f * u * u * u) * (channel == 0 ? std::sqrt (1.0f - pan) : std::sqrt (pan));
+                    if (drops.size() < 128)
+                        drops.push_back ({ amp * std::sin (w), 0.0f, 2.0f * r * std::cos (w), -r * r });
                 }
 
                 float sum = 0.0f;
                 for (auto& d : drops)
                 {
-                    sum += d.amp * std::sin (2.0f * pi * d.phase);
-                    d.phase += d.freq;
-                    d.phase -= std::floor (d.phase);
-                    d.freq *= d.rise;
-                    d.amp *= d.decay;
+                    const float y = d.c1 * d.y1 + d.c2 * d.y2;
+                    d.y2 = d.y1;
+                    d.y1 = y;
+                    sum += y;
                 }
-                drops.erase (std::remove_if (drops.begin(), drops.end(), [] (const Drop& d) { return d.amp < 1.0e-4f; }),
-                             drops.end());
+
+                if ((i & 63) == 0)
+                    drops.erase (std::remove_if (drops.begin(), drops.end(),
+                                                 [] (const Drop& d) { return std::abs (d.y1) + std::abs (d.y2) < 1.0e-5f; }),
+                                 drops.end());
 
                 const float white = gauss (rng);
-                v = sum + hissHp.highpass (white) * 0.05f + bedLp.lowpass (pink.process (white)) * 0.08f;
+                x[i] = sum + hissHp.highpass (white) * 0.05f + bedLp.lowpass (pink.process (white)) * 0.08f;
             }
         });
         normaliseLoop (*n);

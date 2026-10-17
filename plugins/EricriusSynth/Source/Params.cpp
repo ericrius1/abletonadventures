@@ -433,6 +433,24 @@ const std::vector<int>& vpLayoutOrder()
 
 AudioProcessorValueTreeState::ParameterLayout createLayout()
 {
+   #if JUCE_DEBUG
+    {
+        // JUCE's VST3 wrapper derives parameter IDs from String::hashCode(), so two different
+        // ids with the same hash would silently share one host parameter. Catch that early.
+        std::unordered_map<int, String> seen;
+        auto check = [&seen] (const String& id)
+        {
+            const int h = id.hashCode() & 0x7fffffff;
+            jassert (seen.find (h) == seen.end());   // hash collision: rename one of the ids
+            seen[h] = id;
+        };
+        for (int i = 0; i < vp::count; ++i)
+            check (specs()[(size_t) i].id);
+        for (const auto& s : fx::paramSpecs())
+            check (s.id);
+    }
+   #endif
+
     P::Layout layout;
     for (int index : vpLayoutOrder())
         layout.add (makeParameter (specs()[(size_t) index]));

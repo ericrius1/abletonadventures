@@ -88,7 +88,7 @@ std::vector<aa::FactoryPreset> makeFactoryPresets()
     defs.push_back ({ "BS Reese Ritual",
         { { "voiceMode", 2 }, { "glide", 70 }, { "aTable", table ("Reese Cycle") }, { "aPos", 0 }, { "aUnison", 4 },
           { "aDetune", 22 }, { "aBlend", 55 }, { "aWidth", 60 }, { "aLevel", 70 },
-          { "bOn", 1 }, { "bTable", table ("Basic Shapes") }, { "bPos", 50 }, { "bOct", -1 }, { "bLevel", 45 },
+          { "bOn", 1 }, { "bTable", table ("Origin Shapes") }, { "bPos", 50 }, { "bOct", -1 }, { "bLevel", 45 },
           { "subOn", 1 }, { "subOct", -1 }, { "subLevel", 55 }, { "subRoute", 3 },
           { "f1On", 1 }, { "f1Type", filterType (FilterType::ladder) }, { "f1Cutoff", 700 }, { "f1Reso", 22 }, { "f1Drive", 45 },
           { "e1Release", 120 }, { "e2Attack", 2 }, { "e2Decay", 450 }, { "e2Sustain", 25 },
@@ -116,7 +116,7 @@ std::vector<aa::FactoryPreset> makeFactoryPresets()
     defs.push_back ({ "BS FM Wobble",
         { { "voiceMode", 2 }, { "glide", 30 }, { "aTable", table ("FM Growl") }, { "aPos", 20 }, { "aLevel", 75 },
           { "aWarp", warp (Warp::fm) }, { "aWarpSrc", 1 }, { "aWarpAmt", 0 },
-          { "bOn", 1 }, { "bTable", table ("Basic Shapes") }, { "bPos", 0 }, { "bLevel", 30 }, { "bRoute", 3 },
+          { "bOn", 1 }, { "bTable", table ("Origin Shapes") }, { "bPos", 0 }, { "bLevel", 30 }, { "bRoute", 3 },
           { "subOn", 1 }, { "subOct", -1 }, { "subLevel", 50 },
           { "f1On", 1 }, { "f1Type", filterType (FilterType::lp12) }, { "f1Cutoff", 3500 }, { "f1Reso", 20 },
           { "l1Sync", 1 }, { "l1Div", division ("1/4 T") } },
@@ -136,7 +136,7 @@ std::vector<aa::FactoryPreset> makeFactoryPresets()
     defs.push_back ({ "LD Comet Lead",
         { { "voiceMode", 2 }, { "glide", 90 }, { "aTable", table ("Saw Swarm") }, { "aPos", 40 }, { "aUnison", 7 },
           { "aDetune", 20 }, { "aBlend", 70 }, { "aLevel", 70 },
-          { "bOn", 1 }, { "bTable", table ("Basic Shapes") }, { "bPos", 75 }, { "bOct", 1 }, { "bLevel", 30 },
+          { "bOn", 1 }, { "bTable", table ("Origin Shapes") }, { "bPos", 75 }, { "bOct", 1 }, { "bLevel", 30 },
           { "f1On", 1 }, { "f1Type", filterType (FilterType::lp12) }, { "f1Cutoff", 4200 }, { "f1Reso", 15 },
           { "l2Sync", 0 }, { "l2Rate", 5.5f }, { "l2Delay", 250 }, { "l2Rise", 400 }, { "e1Release", 260 } },
         { { S::lfo2, "aFine", 0.08f, true }, { S::lfo2, "bFine", 0.08f, true }, { S::modWheel, "f1Cutoff", 0.3f },
@@ -144,7 +144,7 @@ std::vector<aa::FactoryPreset> makeFactoryPresets()
         { L::sine, L::sine, L::sawDown, L::steps }, { "Brightness", "Macro 2", "Macro 3", "Macro 4" } });
 
     defs.push_back ({ "LD Sync Scream",
-        { { "voiceMode", 2 }, { "glide", 50 }, { "aTable", table ("Basic Shapes") }, { "aPos", 50 },
+        { { "voiceMode", 2 }, { "glide", 50 }, { "aTable", table ("Origin Shapes") }, { "aPos", 50 },
           { "aWarp", warp (Warp::sync) }, { "aWarpAmt", 20 }, { "aUnison", 3 }, { "aDetune", 12 }, { "aLevel", 75 },
           { "f1On", 1 }, { "f1Type", filterType (FilterType::lp24) }, { "f1Cutoff", 6000 }, { "f1Reso", 10 }, { "f1Drive", 35 },
           { "e2Attack", 1 }, { "e2Decay", 900 }, { "e2Sustain", 20 } },
@@ -275,7 +275,7 @@ std::vector<aa::FactoryPreset> makeFactoryPresets()
         { L::sawUp, L::triangle, L::sawDown, L::steps } });
 
     defs.push_back ({ "FX Laser Zap",
-        { { "aTable", table ("Basic Shapes") }, { "aPos", 0 }, { "aLevel", 80 },
+        { { "aTable", table ("Origin Shapes") }, { "aPos", 0 }, { "aLevel", 80 },
           { "e1Attack", 0 }, { "e1Decay", 260 }, { "e1Sustain", 0 }, { "e1Release", 120 },
           { "e2Attack", 0 }, { "e2Decay", 240 }, { "e2Sustain", 0 }, { "e2DCurve", 80 } },
         { { S::env2, "aSemi", 0.5f }, { S::env2, "aPos", 0.6f } } });

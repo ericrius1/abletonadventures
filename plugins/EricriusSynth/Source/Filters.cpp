@@ -6,8 +6,9 @@
 // band-pass formant banks.
 //
 // Coefficients are computed once per control block (setParams) and glide linearly to their new values
-// over the next 32 samples. Switching type cross-fades from a frozen copy of the old filter, so nothing
-// ever pops. Every feedback path is soft-limited, which keeps all types bounded at any setting.
+// over the next 32 samples (in 4-sample steps; drive and mix glide per sample). Switching type cross-fades
+// from a frozen copy of the old filter, so nothing ever pops. Every feedback path is soft-limited, which
+// keeps all types bounded at any setting.
 
 #include "Filters.h"
 
@@ -32,11 +33,23 @@ constexpr int numPhaserStages = 6;
 constexpr int numFormants = 3;
 constexpr float minCutoff = 20.0f;
 
-/** Cubic soft limiter: within 2 % of linear below a third of `level`, saturates smoothly at +-level. */
+/** Cubic soft clipper saturating at +-level (an intentional, gritty curve). */
 inline float limit (float x, float level, float invLevel) noexcept
 {
     const float t = juce::jlimit (-1.5f, 1.5f, x * invLevel);
     return level * (t - (4.0f / 27.0f) * t * t * t);
+}
+
+/** Safety limiter for feedback paths: exactly linear below `knee` (so resonances are untouched at normal
+    levels - even tiny per-sample losses add up inside a high-Q loop), then a smooth shoulder that
+    saturates at knee + range. */
+inline float guard (float x, float knee, float range, float invRange) noexcept
+{
+    const float a = std::abs (x);
+    if (a <= knee)
+        return x;
+    const float u = std::min (1.5f, (a - knee) * invRange);
+    return std::copysign (knee + range * (u - (4.0f / 27.0f) * u * u * u), x);
 }
 
 /** Parabolic approximation of sin (2 pi p) for p in [0, 1) (error < 0.1 %). */
@@ -50,12 +63,14 @@ inline float sin2pi (float p) noexcept
 inline float prewarp (float hz, float sr) noexcept { return std::tan (pi * hz / sr); }
 
 //==============================================================================
-/** N coefficients that glide linearly to new targets over one control block. */
-template <int N>
+/** N coefficients that glide linearly to new targets over one control block, in steps of S samples
+    (the filter coefficients use 8 steps of 4 samples: smooth, and a quarter of the recalculation). */
+template <int N, int S>
 struct Ramp
 {
+    static constexpr int numSteps = rampLength / S;
     float cur[N] {}, inc[N] {}, tgt[N] {};
-    int remaining = 0;
+    int remaining = 0;   // samples left in the glide
 
     void snap (const float* t) noexcept
     {
@@ -69,10 +84,13 @@ struct Ramp
 
     void glide (const float* t) noexcept
     {
+        if (remaining == 0 && std::equal (t, t + N, tgt))
+            return;   // nothing to do: keep the derived coefficients
+
         for (int i = 0; i < N; ++i)
         {
             tgt[i] = t[i];
-            inc[i] = (t[i] - cur[i]) * (1.0f / (float) rampLength);
+            inc[i] = (t[i] - cur[i]) * (1.0f / (float) numSteps);
         }
         remaining = rampLength;
     }
@@ -82,8 +100,10 @@ struct Ramp
     {
         if (remaining <= 0)
             return false;
+        if (--remaining % S != S - 1)
+            return false;
 
-        if (--remaining == 0)
+        if (remaining < S)
             for (int i = 0; i < N; ++i)
                 cur[i] = tgt[i];
         else
@@ -143,8 +163,8 @@ inline float svfStep (const SvfK& c, float x, float* s, float& bp) noexcept
     const float v3 = x - s[1];
     const float v1 = c.a1 * s[0] + c.a2 * v3;
     const float v2 = s[1] + c.a2 * s[0] + c.a3 * v3;
-    s[0] = undenormalise (limit (2.0f * v1 - s[0], 3.0f, 1.0f / 3.0f));
-    s[1] = undenormalise (2.0f * v2 - s[1]);
+    s[0] = guard (2.0f * v1 - s[0], 1.5f, 1.0f, 1.0f);
+    s[1] = 2.0f * v2 - s[1];
     bp = v1;
     return v2;
 }
@@ -163,7 +183,7 @@ inline FatK fatK (float f) noexcept
 
 inline float fatten (float x, float& z, const FatK& f, float aLow) noexcept
 {
-    z = undenormalise (z + aLow * (x - z));
+    z += aLow * (x - z);
     const float y = x + 1.5f * f.amount * z;
     return y + f.amount * (limit (y * f.drive, 1.5f, 1.0f / 1.5f) * f.norm - y);
 }
@@ -237,17 +257,24 @@ void computeTargets (FilterType type, float fc, float reso, float var, float sr,
 
         case FilterType::ladder:
             t[0] = g;
-            t[1] = 4.2f * reso;                           // feedback; self-oscillates from ~0.95
+            t[1] = 4.4f * reso;                           // feedback; self-oscillates from ~0.91
             t[2] = var;
             break;
 
         case FilterType::diode:
-            t[0] = prewarp (clampHz (fc * 0.7f), sr);     // three poles: the resonance lands near fc
-            t[1] = 9.0f * reso;
-            t[2] = var;
-            t[3] = prewarp (clampHz (fc * 0.2f), sr);     // high-pass in the feedback path
-            t[4] = prewarp (clampHz (fc * 1.6f), sr);     // fourth, gentler output pole
+        {
+            // Four mismatched poles, spread the way a diode ladder's are: the resonance (180 degrees of
+            // loop phase) lands on fc and is softer and thinner than the ladder's.
+            constexpr float spread[4] = { 0.42f, 0.84f, 1.35f, 2.0f };
+            for (int i = 0; i < 4; ++i)
+            {
+                const float gi = prewarp (clampHz (fc * spread[i]), sr);
+                t[i] = gi / (1.0f + gi);
+            }
+            t[4] = 6.0f * reso;                           // loop gain at fc is ~0.18: oscillates from ~0.93
+            t[5] = var;
             break;
+        }
 
         case FilterType::combPlus:
         case FilterType::combMinus:
@@ -259,12 +286,14 @@ void computeTargets (FilterType type, float fc, float reso, float var, float sr,
                            : (type == FilterType::combMinus ? -0.97f * reso : 0.95f * reso);
             const float period = sr / fc;
 
-            // The damping low-pass delays the loop: shorten the line by its phase delay at the lowest peak.
+            // The damping low-pass delays the loop and the 5 Hz DC blocker advances it: correct the line
+            // length by both at the lowest peak so keytracked combs stay in tune.
             const float w0 = 2.0f * pi / period * (type == FilterType::combMinus ? 0.5f : 1.0f);
             const float p = 1.0f - a;
-            const float phaseDelay = std::atan2 (p * std::sin (w0), 1.0f - p * std::cos (w0)) / w0;
+            const float lpDelay = std::atan2 (p * std::sin (w0), 1.0f - p * std::cos (w0)) / w0;
+            const float hpLead = std::atan (2.0f * pi * 5.0f / sr / w0) / w0;
 
-            t[0] = juce::jlimit (2.0f, maxDelay, period - phaseDelay);
+            t[0] = juce::jlimit (2.0f, maxDelay, period - lpDelay + hpLead);
             t[1] = fb;
             t[2] = a;
             if (type == FilterType::flanger)
@@ -288,7 +317,7 @@ void computeTargets (FilterType type, float fc, float reso, float var, float sr,
                 t[i] = gi / (1.0f + gi);
             }
             t[6] = 0.92f * reso;
-            t[7] = 1.0f - 0.45f * t[6];
+            t[7] = 1.3f * (1.0f - 0.45f * t[6]);
             break;
         }
 
@@ -299,7 +328,7 @@ void computeTargets (FilterType type, float fc, float reso, float var, float sr,
             const float fr = pos - (float) v0;
             const float shift = std::sqrt (fc / 1000.0f);
             const float bwScale = 2.2f - 1.8f * reso;
-            const float makeup = 1.5f / std::sqrt (bwScale);
+            const float makeup = 3.8f / std::sqrt (bwScale);   // narrow bands pass little energy: make it up
             for (int j = 0; j < numFormants; ++j)
             {
                 const float f = juce::jlimit (40.0f, maxHz, aa::dsp::lerp (vowelHz[v0][j], vowelHz[v0 + 1][j], fr) * shift);
@@ -343,12 +372,12 @@ void computeTargets (FilterType type, float fc, float reso, float var, float sr,
 struct Core
 {
     FilterType type = FilterType::lp12;
-    Ramp<maxCoeffs> ramp;
+    Ramp<maxCoeffs, 4> ramp;
 
     float fatZ[2] {};
     float svf[2][2][2] {};             // [stage][channel][band, low]
     float lad[2][4] {};
-    float dio[2][5] {};                // three stages, feedback high-pass, output pole
+    float dio[2][4] {};
     float dioDc[2] {};
     float damp[2] {}, dc[2] {};
     float ph[2][numPhaserStages] {}, phLast[2] {};
@@ -356,6 +385,30 @@ struct Core
     float ringPhase = 0.0f;
     float dsPhase = 1.0f, dsHeld[2] {}, dsLp[2][2] {};
     float wasp[2][2] {}, waspDc[2] {};
+
+    /** Flushes tiny values out of every feedback state. Run once per chunk (64 samples): far too short
+        for a state to decay from 1e-15 into the denormal range, and it keeps the per-sample loops lean. */
+    void flushDenormals() noexcept
+    {
+        auto flush = [] (float* p, size_t count)
+        {
+            for (size_t i = 0; i < count; ++i)
+                p[i] = undenormalise (p[i]);
+        };
+        flush (fatZ, 2);
+        flush (&svf[0][0][0], 8);
+        flush (&lad[0][0], 8);
+        flush (&dio[0][0], 8);
+        flush (dioDc, 2);
+        flush (damp, 2);
+        flush (dc, 2);
+        flush (&ph[0][0], 2 * numPhaserStages);
+        flush (phLast, 2);
+        flush (&fm[0][0][0], (size_t) numFormants * 4);
+        flush (&dsLp[0][0], 4);
+        flush (&wasp[0][0], 4);
+        flush (waspDc, 2);
+    }
 
     void resetState() noexcept
     {
@@ -412,7 +465,7 @@ void runSvf12 (Core& c, const Ctx& ctx, In in, Out out, int n) noexcept
             else if constexpr (type == FilterType::hp12)    out[ch][i] = x - k.k * bp - lp;
             else if constexpr (type == FilterType::bp12)    out[ch][i] = k.k * bp * gain;
             else if constexpr (type == FilterType::notch)   out[ch][i] = x - k.k * bp;
-            else                                            out[ch][i] = x + gain * k.k * bp;
+            else                                            out[ch][i] = guard (x + gain * k.k * bp, 2.5f, 1.5f, 1.0f / 1.5f);
         }
     }
 }
@@ -468,22 +521,28 @@ void runSvf24 (Core& c, const Ctx& ctx, In in, Out out, int n) noexcept
     }
 }
 
-// Coefficients: 0 g, 1 feedback k (0 .. 4.2), 2 fat
+// Coefficients: 0 g, 1 feedback k (0 .. 4.4), 2 fat
 void runLadder (Core& c, const Ctx& ctx, In in, Out out, int n) noexcept
 {
     auto& r = c.ramp;
-    float G = 0, beta = 1, G2 = 0, G3 = 0, kk = 0, inGain = 1, invDen = 1;
+    float G = 0, G0 = 0, beta = 1, w[4] {}, inGain = 1;
     FatK fat;
     auto derive = [&]
     {
         const float g = r.cur[0];
         G = g / (1.0f + g);
         beta = 1.0f - G;
-        G2 = G * G;
-        G3 = G2 * G;
-        kk = r.cur[1];
-        inGain = 1.0f + 0.6f * kk;                 // bass compensation: resonance no longer hollows the sound
-        invDen = 1.0f / (1.0f + kk * G2 * G2);
+        // Zero-delay feedback: y4 = G^4 u + sum (G^(3-j) beta) s[j]  (each TPT one-pole: y = G x + (1 - G) s),
+        // u = (x (1 + 0.6 k) - k y4) / (1 + k G^4). The 0.6 k term is bass compensation. Everything constant
+        // is folded into the weights; the 0.5 / 2 of the saturator too (G0 = 2 G).
+        const float kk = r.cur[1];
+        const float scale = 0.5f / (1.0f + kk * G * G * G * G);
+        w[3] = kk * scale * beta;
+        w[2] = w[3] * G;
+        w[1] = w[2] * G;
+        w[0] = w[1] * G;
+        inGain = (1.0f + 0.6f * kk) * scale;
+        G0 = 2.0f * G;
         fat = fatK (r.cur[2]);
     };
     derive();
@@ -503,48 +562,48 @@ void runLadder (Core& c, const Ctx& ctx, In in, Out out, int n) noexcept
             float* s = c.lad[ch];
             // Zero-delay feedback: solve the loop linearly, then saturate the stage input (keeps
             // self-oscillation bounded and gives the classic squash).
-            const float S = beta * (G3 * s[0] + G2 * s[1] + G * s[2] + s[3]);
-            float u = (x * inGain - kk * S) * invDen;
-            u = 1.4f * softClip (u * (1.0f / 1.4f));
+            const float S = (w[0] * s[0] + w[1] * s[1]) + (w[2] * s[2] + w[3] * s[3]);
+            const float u = softClip (x * inGain - S);   // stage input / 2, saturated
 
-            float v = (u - s[0]) * G;
-            const float y0 = v + s[0];
-            s[0] = undenormalise (y0 + v);
-            v = (y0 - s[1]) * G;
-            const float y1 = v + s[1];
-            s[1] = undenormalise (y1 + v);
-            v = (y1 - s[2]) * G;
-            const float y2 = v + s[2];
-            s[2] = undenormalise (y2 + v);
-            v = (y2 - s[3]) * G;
-            const float y3 = v + s[3];
-            s[3] = undenormalise (y3 + v);
+            const float y0 = G0 * u + beta * s[0];
+            const float y1 = G * y0 + beta * s[1];
+            const float y2 = G * y1 + beta * s[2];
+            const float y3 = G * y2 + beta * s[3];
+            s[0] = 2.0f * y0 - s[0];
+            s[1] = 2.0f * y1 - s[1];
+            s[2] = 2.0f * y2 - s[2];
+            s[3] = 2.0f * y3 - s[3];
             out[ch][i] = y3;
         }
     }
 }
 
-// Coefficients: 0 g (three poles), 1 k, 2 fat, 3 g feedback high-pass, 4 g output pole
+// Coefficients: 0..3 G per stage, 4 feedback k (0 .. 6), 5 fat
 void runDiode (Core& c, const Ctx& ctx, In in, Out out, int n) noexcept
 {
     auto& r = c.ramp;
-    float G = 0, beta = 1, G2 = 0, kk = 0, Gh = 0, betaH = 1, Go = 0, invDen = 1;
+    float G[4] {}, B[4] {}, w[4] {}, inGain = 1;
     FatK fat;
     auto derive = [&]
     {
-        const float g = r.cur[0];
-        G = g / (1.0f + g);
-        beta = 1.0f - G;
-        G2 = G * G;
-        kk = r.cur[1];
-        Gh = r.cur[3] / (1.0f + r.cur[3]);
-        betaH = 1.0f - Gh;
-        Go = r.cur[4] / (1.0f + r.cur[4]);
-        invDen = 1.0f / (1.0f + kk * betaH * G2 * G);
-        fat = fatK (r.cur[2]);
+        for (int j = 0; j < 4; ++j)
+        {
+            G[j] = r.cur[j];
+            B[j] = 1.0f - G[j];
+        }
+        // y4 = G0 G1 G2 G3 u + sum w[j] s[j]   (TPT one-poles: y = G x + (1 - G) s);
+        // u = (x (1 + 0.35 k) - k y4) / (1 + k G0 G1 G2 G3), constants folded into the weights.
+        const float kk = r.cur[4];
+        const float invDen = 1.0f / (1.0f + kk * G[0] * G[1] * G[2] * G[3]);
+        w[3] = kk * invDen * (1.0f - G[3]);
+        w[2] = kk * invDen * G[3] * (1.0f - G[2]);
+        w[1] = kk * invDen * G[3] * G[2] * (1.0f - G[1]);
+        w[0] = kk * invDen * G[3] * G[2] * G[1] * (1.0f - G[0]);
+        inGain = (1.0f + 0.35f * kk) * invDen;     // only partial bass compensation: acid stays lean
+        fat = fatK (r.cur[5]);
     };
     derive();
-    const bool useFat = r.active (2);
+    const bool useFat = r.active (5);
 
     for (int i = 0; i < n; ++i)
     {
@@ -558,30 +617,24 @@ void runDiode (Core& c, const Ctx& ctx, In in, Out out, int n) noexcept
                 x = fatten (x, c.fatZ[ch], fat, ctx.aFat);
 
             float* s = c.dio[ch];
-            // Loop: u = x - k * HP (y3); solved with zero delay, then a lopsided "diode" saturation.
-            const float S3 = beta * (G2 * s[0] + G * s[1] + s[2]);
-            float u = (x - kk * betaH * (S3 - s[3])) * invDen;
-            u = u >= 0.0f ? 1.2f * softClip (u * (1.0f / 1.2f)) : 0.85f * softClip (u * (1.0f / 0.85f));
+            const float S = (w[0] * s[0] + w[1] * s[1]) + (w[2] * s[2] + w[3] * s[3]);
+            float u = x * inGain - S;
+            // Lopsided "diode" saturation (branch-free): even harmonics and a squelchier resonance.
+            const float level = 1.0f + std::copysign (0.2f, u);                 // 1.2 / 0.8
+            const float invLevel = 1.0416667f - std::copysign (0.2083333f, u);  // 1 / level
+            u = level * softClip (u * invLevel);
 
-            float v = (u - s[0]) * G;
-            const float y0 = v + s[0];
-            s[0] = undenormalise (y0 + v);
-            v = (y0 - s[1]) * G;
-            const float y1 = v + s[1];
-            s[1] = undenormalise (y1 + v);
-            v = (y1 - s[2]) * G;
-            const float y2 = v + s[2];
-            s[2] = undenormalise (y2 + v);
+            const float y0 = G[0] * u + B[0] * s[0];
+            const float y1 = G[1] * y0 + B[1] * s[1];
+            const float y2 = G[2] * y1 + B[2] * s[2];
+            const float y = G[3] * y2 + B[3] * s[3];
+            s[0] = 2.0f * y0 - s[0];
+            s[1] = 2.0f * y1 - s[1];
+            s[2] = 2.0f * y2 - s[2];
+            s[3] = 2.0f * y - s[3];
 
-            v = (y2 - s[3]) * Gh;                  // feedback high-pass state (one-pole low-pass, subtracted)
-            s[3] = undenormalise (2.0f * v + s[3]);
-
-            v = (y2 - s[4]) * Go;
-            const float yo = v + s[4];
-            s[4] = undenormalise (yo + v);
-
-            c.dioDc[ch] = undenormalise (c.dioDc[ch] + ctx.aDc * (yo - c.dioDc[ch]));
-            out[ch][i] = yo - c.dioDc[ch];
+            c.dioDc[ch] += ctx.aDc * (y - c.dioDc[ch]);
+            out[ch][i] = y - c.dioDc[ch];
         }
     }
 }
@@ -600,11 +653,11 @@ void runComb (Core& c, const Ctx& ctx, In in, Out out, int n) noexcept
             const float x = in[ch][i];
             auto& line = ctx.delay[ch];
             const float w = line.read (d);
-            c.damp[ch] = undenormalise (c.damp[ch] + a * (w - c.damp[ch]));
-            c.dc[ch] = undenormalise (c.dc[ch] + ctx.aDc * (c.damp[ch] - c.dc[ch]));
+            c.damp[ch] += a * (w - c.damp[ch]);
+            c.dc[ch] += ctx.aDc * (c.damp[ch] - c.dc[ch]);
             const float v = c.damp[ch] - c.dc[ch];
             const float s = x + fb * v;
-            line.push (limit (s, 2.5f, 0.4f));
+            line.push (undenormalise (guard (s, 1.5f, 1.0f, 1.0f)));
             out[ch][i] = wa * s + wb * v + wc * x;
         }
     }
@@ -614,11 +667,26 @@ void runComb (Core& c, const Ctx& ctx, In in, Out out, int n) noexcept
 void runPhaser (Core& c, const Ctx&, In in, Out out, int n) noexcept
 {
     auto& r = c.ramp;
+    // TPT allpass (2 lp - x) rearranged so the signal path is one multiply-add per stage:
+    //   out = (2G - 1) x + 2 (1 - G) s,   s' = 2G x + 2 (1 - G) s - s
+    float c1[numPhaserStages], c2[numPhaserStages], c3[numPhaserStages];
+    auto derive = [&]
+    {
+        for (int j = 0; j < numPhaserStages; ++j)
+        {
+            c1[j] = 2.0f * r.cur[j] - 1.0f;
+            c2[j] = 2.0f * (1.0f - r.cur[j]);
+            c3[j] = 2.0f * r.cur[j];
+        }
+    };
+    derive();
+
     for (int i = 0; i < n; ++i)
     {
-        r.tick();
-        const float fb = r.cur[6], norm = r.cur[7];
+        if (r.tick())
+            derive();
 
+        const float fb = r.cur[6], norm = r.cur[7];
         for (int ch = 0; ch < 2; ++ch)
         {
             const float x = in[ch][i];
@@ -626,12 +694,11 @@ void runPhaser (Core& c, const Ctx&, In in, Out out, int n) noexcept
             float* s = c.ph[ch];
             for (int j = 0; j < numPhaserStages; ++j)
             {
-                const float v = (a - s[j]) * r.cur[j];
-                const float lp = v + s[j];
-                s[j] = undenormalise (lp + v);
-                a = 2.0f * lp - a;
+                const float bs = c2[j] * s[j];
+                s[j] = c3[j] * a + bs - s[j];
+                a = c1[j] * a + bs;
             }
-            c.phLast[ch] = limit (a, 2.0f, 0.5f);
+            c.phLast[ch] = guard (a, 1.5f, 0.5f, 2.0f);
             out[ch][i] = 0.5f * (x + a) * norm;
         }
     }
@@ -757,12 +824,12 @@ void runWasp (Core& c, const Ctx& ctx, In in, Out out, int n) noexcept
 
             // CMOS-style integrators: the band state clips early and lopsided, so the resonance snarls.
             const float b = 2.0f * v1 - s[0];
-            s[0] = undenormalise (b > 0.0f ? limit (b, 1.0f, 1.0f) : limit (b, 1.4f, 1.0f / 1.4f));
-            s[1] = undenormalise (limit (2.0f * v2 - s[1], 2.5f, 0.4f));
+            s[0] = b > 0.0f ? limit (b, 1.0f, 1.0f) : limit (b, 1.4f, 1.0f / 1.4f);
+            s[1] = limit (2.0f * v2 - s[1], 2.5f, 0.4f);
 
             const float hp = x - k.k * v1 - v2;
             const float y = limit (cl * v2 + cb * v1 + chp * hp, 1.6f, 1.0f / 1.6f);
-            c.waspDc[ch] = undenormalise (c.waspDc[ch] + ctx.aDc * (y - c.waspDc[ch]));
+            c.waspDc[ch] += ctx.aDc * (y - c.waspDc[ch]);
             out[ch][i] = y - c.waspDc[ch];
         }
     }
@@ -792,6 +859,7 @@ void runCore (Core& c, const Ctx& ctx, In in, Out out, int n) noexcept
         case FilterType::wasp:       runWasp (c, ctx, in, out, n); break;
         case FilterType::count:      break;
     }
+    c.flushDenormals();
 }
 } // namespace
 
@@ -807,7 +875,7 @@ struct VoiceFilter::Impl
     int fadeRemaining = 0, fadeLength = 128;
     float fadeInv = 1.0f / 128.0f;
 
-    Ramp<4> global;   // 0 drive pre-gain, 1 drive make-up, 2 drive blend, 3 mix
+    Ramp<4, 1> global;   // per sample: 0 drive pre-gain, 1 drive make-up, 2 drive blend, 3 mix
     bool needsSnap = true, delayDirty = false;
 
     void prepare (float sampleRate)

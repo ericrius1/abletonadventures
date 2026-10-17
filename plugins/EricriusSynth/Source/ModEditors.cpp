@@ -60,15 +60,27 @@ void EnvelopeEditor::resized()
         placeRow (row, { attack.get(), hold.get(), decay.get(), sustain.get(), release.get() });
 }
 
+void EnvelopeEditor::updateZoom()
+{
+    if (dragging >= 0 || env < 0)
+        return;
+    zoom = 1.0f;
+    const float w = graphArea().getWidth() - 16.0f;
+    const float used = timeToWidth (value (vp::env (env, EnvField::attack))) + timeToWidth (value (vp::env (env, EnvField::hold)))
+                     + timeToWidth (value (vp::env (env, EnvField::decay))) + timeToWidth (value (vp::env (env, EnvField::release)))
+                     + w * 0.12f;
+    zoom = jlimit (1.0f, 3.0f, (w * 0.9f - w * 0.12f) / jmax (1.0f, used - w * 0.12f));
+}
+
 float EnvelopeEditor::timeToWidth (float ms) const
 {
-    const float maxW = graphArea().getWidth() / 4.4f;
+    const float maxW = graphArea().getWidth() / 4.4f * zoom;
     return maxW * std::log1p (jmax (0.0f, ms) / 15.0f) / std::log1p (maxEnvMs / 15.0f);
 }
 
 float EnvelopeEditor::widthToTime (float w) const
 {
-    const float maxW = graphArea().getWidth() / 4.4f;
+    const float maxW = graphArea().getWidth() / 4.4f * zoom;
     return 15.0f * std::expm1 (jlimit (0.0f, 1.0f, w / maxW) * std::log1p (maxEnvMs / 15.0f));
 }
 
@@ -273,8 +285,10 @@ void EnvelopeEditor::refresh()
     for (auto* k : { attack.get(), hold.get(), decay.get(), sustain.get(), release.get() })
         k->refreshModulation();
 
+    const float oldZoom = zoom;
+    updateZoom();
     const float level = proc.engine.ui.envLevel[(size_t) env].load (std::memory_order_relaxed);
-    if (std::abs (level - liveLevel) > 0.002f)
+    if (std::abs (level - liveLevel) > 0.002f || std::abs (zoom - oldZoom) > 0.001f)
     {
         liveLevel = level;
         repaint();
@@ -471,7 +485,7 @@ void LfoEditor::paint (Graphics& g)
     g.setFont (aa::Fonts::ui (10.0f));
     g.setColour (textDim);
     g.drawText ("LFO " + String (lfo + 1) + "  -  click to add, double-click to delete, drag the rings to bend, right-click for shapes",
-                area.reduced (8.0f, 4.0f).toNearestInt(), Justification::bottomLeft);
+                area.reduced (8.0f, 4.0f).withTrimmedRight (100.0f).toNearestInt(), Justification::topLeft);
 }
 
 void LfoEditor::mouseMove (const MouseEvent& e)
