@@ -13,7 +13,7 @@ enum class Kind { hyper, distortion, flanger, phaser, chorus, delay, compressor,
 constexpr int numKinds = (int) Kind::count;
 
 juce::String kindName (Kind);         // "Hyper", "Distortion", ...
-juce::String kindPrefix (Kind);       // parameter id prefix: "hy", "di", "fl", "ph", "ch", "dl", "co", "rv", "eq", "ff"
+juce::String kindPrefix (Kind);       // parameter id prefix: "hy", "di", "fl", "ph", "ch", "dl", "comp", "rv", "eq", "ff"
 
 /** Describes one FX parameter. The processor creates the actual AudioProcessorParameters from these,
     in this order, and passes their current (denormalised, possibly modulated) values to process(). */

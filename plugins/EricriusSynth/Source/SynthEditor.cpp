@@ -113,10 +113,12 @@ SynthEditor::SynthEditor (SynthProcessor& p)
     // Reopen on the page that was showing last. ERS_UI_PAGE / ERS_UI_MODTAB let the test
     // harness take screenshots of every page.
     int startPage = proc.lastPage;
-    if (const char* e = std::getenv ("ERS_UI_PAGE"))
-        startPage = String (e).getIntValue();
-    if (const char* e = std::getenv ("ERS_UI_MODTAB"))
-        modulation.select (jlimit (0, 7, String (e).getIntValue()));
+    const auto pageOverride = SystemStats::getEnvironmentVariable ("ERS_UI_PAGE", {});
+    if (pageOverride.isNotEmpty())
+        startPage = pageOverride.getIntValue();
+    const auto tabOverride = SystemStats::getEnvironmentVariable ("ERS_UI_MODTAB", {});
+    if (tabOverride.isNotEmpty())
+        modulation.select (jlimit (0, 7, tabOverride.getIntValue()));
     showPage ((Page) jlimit (0, 2, startPage));
 }
 

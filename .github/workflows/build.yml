@@ -155,11 +155,11 @@ jobs:
           Everything appears under **Plug-Ins > Adventure Audio**.
 
           ## What's inside
-          Stardust (pad synth) · Critter Kit (drum machine) · Orrery (polyrhythm sequencer) · Babble (singing synth) ·
-          Dandelion (granular sampler) · Boing (bouncing-ball delay) · Gremlin (glitch) · Tape Dreams (lo-fi tape) ·
-          Crystal Cave (shimmer reverb)
+          ericriusSynth (wavetable synth) · Stardust (pad synth) · Critter Kit (drum machine) ·
+          Orrery (polyrhythm sequencer) · Babble (singing synth) · Dandelion (granular sampler) ·
+          Boing (bouncing-ball delay) · Gremlin (glitch) · Tape Dreams (lo-fi tape) · Crystal Cave (shimmer reverb)
 
-          🎬 **adventure-pack-showcase.mp4** below is a 1-minute tour of all nine.
+          🎬 **adventure-pack-showcase.mp4** below is a 1-minute tour of the first nine.
           EOF
           sed -i 's/^          //' notes.md
           gh release delete "$TAG" --yes --cleanup-tag || true

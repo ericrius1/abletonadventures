@@ -2,15 +2,16 @@
 
 # 🎒 The Adventure Pack
 
-**Nine whimsical, good-looking, genuinely useful plugins for Ableton Live**: five instruments and four effects,
-each with its own hand-drawn personality. VST3 for macOS + Windows, Audio Units for macOS.
+**Ten whimsical, good-looking, genuinely useful plugins for Ableton Live**: six instruments and four effects,
+each with its own hand-drawn personality, including **ericriusSynth**, a full wavetable synthesizer.
+VST3 for macOS + Windows, Audio Units for macOS.
 
 <!-- Inline video player: drop docs/media/adventure-pack-showcase-720p.mp4 onto this line in GitHub's web editor. -->
 
-[![A tour of all nine plugins](docs/media/showcase-preview.gif)](docs/media/adventure-pack-showcase.mp4)
+[![A tour of the plugins](docs/media/showcase-preview.gif)](docs/media/adventure-pack-showcase.mp4)
 
-🎬 **[Watch the full 1-minute tour with sound](docs/media/adventure-pack-showcase.mp4)**: every plugin's real UI and real audio,
-cut together as one song. It's also attached to each [release](https://github.com/ericrius1/abletonadventures/releases/latest).
+🎬 **[Watch the full 1-minute tour with sound](docs/media/adventure-pack-showcase.mp4)**: the first nine plugins' real UIs and
+real audio, cut together as one song. It's also attached to each [release](https://github.com/ericrius1/abletonadventures/releases/latest).
 
 ## ⬇️ Install (2 minutes)
 
@@ -31,6 +32,27 @@ unzip it, double-click **Install Adventure Pack.bat** and allow admin access.
 
 > The plugins aren't code-signed by Apple/Microsoft. The installers handle that for you: on macOS they clear the
 > download quarantine and apply a local signature so Live loads them; on Windows they unblock the files.
+
+## 🌌 ericriusSynth
+
+![ericriusSynth](docs/screenshots/EricriusSynth.png)
+
+**ericriusSynth** is a big, modern wavetable synth, written from scratch for this pack:
+
+* **Three wavetable oscillators** with a library of 36 original tables (analog, digital, vocal, spectral, FM,
+  bass, keys, weird) shown as a glowing 3D stack. **Drop any WAV onto an oscillator** to use it as a wavetable;
+  standard wavetable files from other synths load too, and long samples get sliced into tables automatically.
+* **15 warp modes** (sync, bend, PWM, asym, flip, mirror, quantize, FM / AM / RM between oscillators),
+  **16-voice unison** with detune, blend, width and octave / fifth / chord stacking, plus a sub and 14 noise sources.
+* **Two filters**, 18 types each (ladder, diode, combs, formant, phaser, ring mod, downsample...), in series or parallel.
+* **Drag-and-drop modulation**: grab an envelope, LFO or macro handle and drop it on any knob. Coloured rings show
+  the depth and a dot shows the live value. Four AHDSR envelopes, four **drawable LFOs** (tempo-synced, song-locked
+  or one-shot), four macros, velocity, aftertouch, mod wheel and more, with a 32-slot matrix.
+* **Ten-effect rack** you can reorder: hyper/dimension, distortion, flanger, phaser, chorus, delay, compressor
+  (including three-band up/down), reverb, EQ and filter.
+* 24 presets across basses, leads, pads, plucks, keys, sequences and effects.
+
+Read the [ericriusSynth manual](docs/ericriusSynth.md) for every feature.
 
 ## 🎹 Instruments
 
@@ -59,6 +81,8 @@ unzip it, double-click **Install Adventure Pack.bat** and allow admin access.
 * **Push**: the most playable parameters come first, so Push's first bank is useful out of the box.
 * **Orrery → other instruments**: put Orrery on a MIDI track, then on another MIDI track set *MIDI From* to the
   Orrery track, choose *Orrery* in the second dropdown, and arm/monitor it.
+* **ericriusSynth on Push**: the first bank is Macro 1-4, Filter 1 Cutoff and Resonance, and the Osc A / B wavetable
+  positions. Drop LFOs and envelopes onto the macros' targets in the plugin, then play everything from Push.
 * **Critter Kit + Drum Rack habits**: notes C1–G1 (36–43) trigger the eight critters; the sequencer runs while
   Live is playing (toggle *Seq* off to play it purely from MIDI clips).
 

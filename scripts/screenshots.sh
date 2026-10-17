@@ -25,13 +25,14 @@ shoot Boing --input drums
 shoot Gremlin --input drums
 shoot TapeDreams --input pluck
 shoot CrystalCave --input pluck
+shoot EricriusSynth --midi chords --preset "PD Nebula Bloom"
 
 cd "$DEST"
 shots=()
-for n in Stardust CritterKit Orrery Babble Dandelion Boing Gremlin TapeDreams CrystalCave; do
+for n in Stardust CritterKit Orrery Babble Dandelion EricriusSynth Boing Gremlin TapeDreams CrystalCave; do
     [ -f "$n.png" ] && shots+=("$n.png")
 done
 if [ ${#shots[@]} -gt 0 ]; then
-    montage "${shots[@]}" -resize 600x400 -tile 3x -geometry +10+10 -background '#14121c' montage.png
+    montage "${shots[@]}" -resize 600x400 -tile 5x -geometry +10+10 -background '#14121c' montage.png
     echo "  ✓ montage.png"
 fi

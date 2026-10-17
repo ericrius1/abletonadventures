@@ -41,6 +41,13 @@ namespace
         return (float) jmax (0, i);
     }
 
+    float delayDiv (const char* name)
+    {
+        const int i = fx::paramSpecs()[(size_t) fx::specIndex ("dlSyncL")].choices.indexOf (name);
+        jassert (i >= 0);
+        return (float) jmax (0, i);
+    }
+
     float filterType (FilterType t) { return (float) (int) t; }
     float warp (Warp w)             { return (float) (int) w; }
 
@@ -258,7 +265,7 @@ std::vector<aa::FactoryPreset> makeFactoryPresets()
 
     defs.push_back ({ "SQ Ring Runner",
         { { "aTable", table ("Ring Sweep") }, { "aPos", 20 }, { "aLevel", 75 },
-          { "f1On", 1 }, { "f1Type", filterType (FilterType::bp12) }, { "f1Cutoff", 1500 }, { "f1Reso", 35 },
+          { "f1On", 1 }, { "f1Type", filterType (FilterType::lp12) }, { "f1Cutoff", 1400 }, { "f1Reso", 40 },
           { "e1Attack", 1 }, { "e1Decay", 220 }, { "e1Sustain", 0 }, { "e1Release", 200 },
           { "l1Sync", 1 }, { "l1Div", division ("2 bars") }, { "l1Mode", 1 } },
         { { S::lfo1, "f1Cutoff", 0.5f }, { S::lfo1, "aPos", 0.6f }, { S::random, "aPan", 0.4f } },
@@ -279,6 +286,84 @@ std::vector<aa::FactoryPreset> makeFactoryPresets()
           { "e1Attack", 0 }, { "e1Decay", 260 }, { "e1Sustain", 0 }, { "e1Release", 120 },
           { "e2Attack", 0 }, { "e2Decay", 240 }, { "e2Sustain", 0 }, { "e2DCurve", 80 } },
         { { S::env2, "aSemi", 0.5f }, { S::env2, "aPos", 0.6f } } });
+
+    // ---- effects for each preset --------------------------------------------------------------
+    using V = std::vector<std::pair<String, float>>;
+    auto withFx = [&defs] (const char* name, V fxValues)
+    {
+        for (auto& d : defs)
+            if (d.name == name)
+                d.values.insert (d.values.end(), fxValues.begin(), fxValues.end());
+    };
+    const V plate { { "rvOn", 1 }, { "rvMode", 0 }, { "rvDecay", 1.6f }, { "rvMix", 18 } };
+    const V room { { "rvOn", 1 }, { "rvMode", 2 }, { "rvDecay", 0.9f }, { "rvMix", 14 } };
+    auto hall = [] (float mix, float decay) { return V { { "rvOn", 1 }, { "rvMode", 1 }, { "rvSize", 75 }, { "rvDecay", decay }, { "rvMix", mix }, { "rvPreDelay", 25 } }; };
+    auto delay = [] (int mode, const char* l, const char* r, float fb, float mix)
+    {
+        return V { { "dlOn", 1 }, { "dlMode", (float) mode }, { "dlSync", 1 }, { "dlSyncL", delayDiv (l) }, { "dlSyncR", delayDiv (r) },
+                   { "dlFeedback", fb }, { "dlMix", mix }, { "dlHighCut", 6000 }, { "dlLowCut", 200 } };
+    };
+    auto join = [] (std::initializer_list<V> parts)
+    {
+        V v;
+        for (const auto& p : parts)
+            v.insert (v.end(), p.begin(), p.end());
+        return v;
+    };
+    const V ott { { "compOn", 1 }, { "compMode", 1 }, { "compAmount", 55 }, { "compMix", 70 } };
+    const V glue { { "compOn", 1 }, { "compMode", 0 }, { "compThreshold", -20 }, { "compRatio", 3 }, { "compAttack", 10 }, { "compGain", 4 } };
+
+    withFx ("BS Reese Ritual", join ({ { { "diOn", 1 }, { "diMode", 0 }, { "diDrive", 35 }, { "diMix", 60 } }, ott, room }));
+    withFx ("BS Growl Talker", join ({ { { "diOn", 1 }, { "diMode", 1 }, { "diDrive", 30 }, { "diMix", 70 } }, ott }));
+    withFx ("BS Sub Pulse", glue);
+    withFx ("BS FM Wobble", join ({ { { "diOn", 1 }, { "diMode", 4 }, { "diDrive", 25 }, { "diMix", 45 } }, ott }));
+    withFx ("BS West Coast Fold", join ({ { { "chOn", 1 }, { "chMix", 25 } }, room }));
+    withFx ("LD Comet Lead", join ({ delay (1, "1/8D", "1/4", 35, 22), hall (16, 2.4f), { { "hyOn", 1 }, { "hyMix", 30 } } }));
+    withFx ("LD Sync Scream", join ({ { { "diOn", 1 }, { "diMode", 0 }, { "diDrive", 40 }, { "diMix", 50 } }, delay (1, "1/8", "1/8D", 30, 18), plate }));
+    withFx ("LD Chip Hero", join ({ delay (0, "1/8D", "1/8D", 40, 25), room }));
+    withFx ("LD Vowel Singer", join ({ { { "chOn", 1 }, { "chMix", 35 } }, delay (1, "1/4", "1/4D", 30, 18), plate }));
+    withFx ("PD Nebula Bloom", join ({ { { "hyOn", 1 }, { "hyMix", 45 }, { "hyDimMix", 40 } }, hall (34, 6.0f) }));
+    withFx ("PD Choir of Stars", join ({ { { "chOn", 1 }, { "chMix", 40 } }, hall (38, 5.0f) }));
+    withFx ("PD Prism Drift", join ({ { { "phOn", 1 }, { "phRate", 0.08f }, { "phMix", 45 } }, delay (1, "1/4D", "1/2", 45, 20), hall (30, 4.5f) }));
+    withFx ("PD Bowed Horizon", join ({ { { "chOn", 1 }, { "chMix", 30 } }, hall (30, 3.5f), { { "eqOn", 1 }, { "eqHighGain", 2.5f } } }));
+    withFx ("PD Resonant Tide", join ({ { { "flOn", 1 }, { "flRate", 0.06f }, { "flMix", 35 } }, hall (32, 4.0f) }));
+    withFx ("PL Glass Pluck", join ({ delay (1, "1/8", "1/4", 38, 26), plate }));
+    withFx ("PL Harmonic Pluck", join ({ delay (0, "1/8D", "1/8D", 30, 20), room }));
+    withFx ("KY Tine Dream", join ({ { { "phOn", 1 }, { "phRate", 0.35f }, { "phMix", 30 } }, room }));
+    withFx ("KY Drawbar Dreams", join ({ { { "chOn", 1 }, { "chMix", 30 }, { "chRate", 1.4f } }, room }));
+    withFx ("KY Phase Res Keys", join ({ delay (1, "1/8D", "1/8D", 30, 16), plate }));
+    withFx ("SQ Byte Gate", join ({ delay (1, "1/16", "1/8", 30, 18), room }));
+    withFx ("SQ Ring Runner", join ({ delay (1, "1/8T", "1/8", 45, 28), hall (22, 3.0f) }));
+    withFx ("FX Rising Star", join ({ delay (1, "1/4", "1/4D", 50, 25), hall (40, 7.0f) }));
+    withFx ("FX Laser Zap", join ({ delay (1, "1/8", "1/8D", 45, 30), plate }));
+
+    // Output level per preset, balanced so sustained sounds peak around -14 dBFS momentary
+    // loudness (plucks a little lower, limited by their transient peaks).
+    // VOLUMES-BEGIN
+    withFx ("BS Reese Ritual", { { "volume", 2.5f } });
+    withFx ("BS Growl Talker", { { "volume", 3.5f } });
+    withFx ("BS Sub Pulse", { { "volume", 4.5f } });
+    withFx ("BS FM Wobble", { { "volume", 3.5f } });
+    withFx ("BS West Coast Fold", { { "volume", 9.0f } });
+    withFx ("LD Comet Lead", { { "volume", 5.5f } });
+    withFx ("LD Sync Scream", { { "volume", 5.5f } });
+    withFx ("LD Chip Hero", { { "volume", 3.0f } });
+    withFx ("LD Vowel Singer", { { "volume", 8.0f } });
+    withFx ("PD Nebula Bloom", { { "volume", 0.5f } });
+    withFx ("PD Choir of Stars", { { "volume", -0.5f } });
+    withFx ("PD Prism Drift", { { "volume", 2.5f } });
+    withFx ("PD Bowed Horizon", { { "volume", 0.5f } });
+    withFx ("PD Resonant Tide", { { "volume", 4.5f } });
+    withFx ("PL Glass Pluck", { { "volume", 5.5f } });
+    withFx ("PL Harmonic Pluck", { { "volume", 9.0f } });
+    withFx ("KY Tine Dream", { { "volume", 5.5f } });
+    withFx ("KY Drawbar Dreams", { { "volume", -2.5f } });
+    withFx ("KY Phase Res Keys", { { "volume", 7.5f } });
+    withFx ("SQ Byte Gate", { { "volume", 8.5f } });
+    withFx ("SQ Ring Runner", { { "volume", 7.0f } });
+    withFx ("FX Rising Star", { { "volume", 7.5f } });
+    withFx ("FX Laser Zap", { { "volume", 12.0f } });
+    // VOLUMES-END
 
     std::vector<aa::FactoryPreset> presets;
     for (auto& d : defs)

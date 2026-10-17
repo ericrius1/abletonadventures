@@ -462,7 +462,15 @@ AudioProcessorValueTreeState::ParameterLayout createLayout()
             case fx::ParamSpec::Type::choice: layout.add (P::choice (s.id, s.name, s.choices, (int) s.def)); break;
             case fx::ParamSpec::Type::toggle: layout.add (P::toggle (s.id, s.name, s.def > 0.5f)); break;
             case fx::ParamSpec::Type::floating:
-                layout.add (P::floatParam (s.id, s.name, s.min, s.max, s.def, s.unit, s.skewCentre, s.step));
+                if (s.id.endsWith ("Stereo"))
+                {
+                    // stereo phase offsets read better in degrees
+                    Spec deg { s.id, s.name, Kind::floating, s.min, s.max, s.def };
+                    deg.degrees = true;
+                    layout.add (makeParameter (deg));
+                }
+                else
+                    layout.add (P::floatParam (s.id, s.name, s.min, s.max, s.def, s.unit, s.skewCentre, s.step));
                 break;
         }
     }
