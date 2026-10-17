@@ -46,6 +46,8 @@ public:
     virtual void loadExtraState (const juce::ValueTree&) {}
     /** Called before a factory preset is applied so extra state can go back to defaults. */
     virtual void resetExtraState() {}
+    /** Called after a saved state, preset file or factory preset has been fully applied. */
+    virtual void stateLoaded() {}
 
     //==============================================================================
     juce::RangedAudioParameter* param (const juce::String& id) const;

@@ -131,6 +131,7 @@ void PluginBase::restoreFromXml (const XmlElement& xml, bool includeUiState)
         uiScale = (float) jlimit (0.5, 3.0, xml.getDoubleAttribute ("uiScale", 1.0));
 
     setPresetName (xml.getStringAttribute ("preset", "Default"), xml.getIntAttribute ("presetIndex", -1));
+    stateLoaded();
 }
 
 void PluginBase::getStateInformation (MemoryBlock& destData)
@@ -190,6 +191,7 @@ void PluginBase::loadFactoryPreset (int index)
         preset.applyExtra (*this);
 
     setPresetName (preset.name, index);
+    stateLoaded();
 }
 
 File PluginBase::getUserPresetFolder() const

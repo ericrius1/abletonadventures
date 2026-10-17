@@ -55,10 +55,11 @@ set(AA_PLUGINS
     Gremlin
     TapeDreams
     CrystalCave
-    Dandelion)
+    Dandelion
+    EricriusSynth)
 
 # Plugins still being finished: only built when asked for explicitly with -DAA_ONLY=<Name>.
-set(AA_WIP_PLUGINS)
+set(AA_WIP_PLUGINS EricriusSynth)
 
 foreach(plugin IN LISTS AA_PLUGINS)
     if((AA_ONLY STREQUAL "" AND NOT plugin IN_LIST AA_WIP_PLUGINS) OR AA_ONLY STREQUAL plugin)
